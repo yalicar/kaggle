@@ -1,0 +1,153 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+
+rm(list = ls())
+
+```
+
+```{r}
+# Cargando librerias
+# ==============================================================================
+library(skimr)
+library(caret)
+library(VIM)
+library(reshape2)
+library(caret)
+library(doSNOW)
+library(dplyr)
+library(tidyverse)
+
+```
+
+
+```{r}
+# Carga de los datos de entrenamiento y prueba
+# ==============================================================================
+
+train<- read.csv("train.csv", sep=",")
+test<- read.csv("test.csv", sep = ",")
+
+
+# Tranformaciones de variables categoricas a numericas
+# ==============================================================================
+
+subData<- train %>%
+  dplyr::select(ocean_proximity)
+
+OHE<-dummyVars("~.", data=train)
+train<-data.frame(predict(OHE, newdata=train))
+
+
+subData2<- test %>%
+  dplyr::select(ocean_proximity)
+
+OHE<-dummyVars("~.", data=test)
+test<-data.frame(predict(OHE, newdata=test))
+
+# Imputacion de datos de forma aleatoria
+# ==============================================================================
+
+rand.imput <-function(x){
+missing <- (is.na(x)) #vector booleano
+n.missing <- sum(missing)#Numero de NA’s
+x.obs <- x[!missing]#Datos no NA
+imputed <- x
+imputed[missing] <- sample(x.obs,n.missing,replace = T)
+#Se extrae una muestra aleatoria conocida y se remplazan estos en los NA
+return(imputed)}
+
+train$total_bedrooms <- rand.imput(train$total_bedrooms)
+test$total_bedrooms <- rand.imput(test$total_bedrooms)
+
+
+# Imputacion de datos faltantes usando knn
+# ==============================================================================
+# kn=5
+
+#train<- kNN(train,variable=c("total_bedrooms"),k=kn)
+#train<- subset( train, select = -c(total_bedrooms_imp) )
+#test<- kNN(test,variable=c("total_bedrooms"),k=kn)
+#test<- subset(test, select = -c(total_bedrooms_imp) )
+
+```
+
+```{r}
+set.seed(1234)
+train_3<-train
+skim(train_3)
+```
+
+```{r}
+
+# Extreme Gradient Boosting CV entrenamiento del modelo
+# ==============================================================================
+
+set.seed(431)
+
+
+trctrl <- trainControl(method = "cv", number = 10,returnResamp = "all", search = "random")
+
+tune_grid <- expand.grid(nrounds = 5000,
+                        max_depth = 12,
+                        eta = 0.01, # C(0.01,0.02,0.03)
+                        gamma = 0.5, # C(0.1, 0.5,0.8)
+                        colsample_bytree = 0.5,
+                        min_child_weight = 4,
+                        subsample = 1
+                       )
+
+
+
+set.seed(431)
+modRF <-train(median_house_value ~ .,
+              data=train_3,
+              method="xgbTree",
+              preProcess = c("conditionalX","YeoJohnson"),
+              trControl = trctrl,
+              tuneGrid = tune_grid,
+              tuneLength = 5,verbose = TRUE
+               )
+
+
+
+
+
+# 42703.81 , cv 10 , maxdeep 12
+
+# Visualizacion de las caracteristicas del modelo
+# ==============================================================================
+
+modRF
+
+```
+
+
+
+```{r}
+# Guardar dataframe como CSV
+# ==============================================================================
+
+rf.predict <-predict(modRF, test)
+
+predictions<-rf.predict
+predictions<-data.frame(predictions)
+predictions$id <-test$id
+colnames(predictions)[colnames(predictions) == 'predictions'] <- 'median_house_value'
+
+predictions<-predictions %>%
+  dplyr::select(id,median_house_value)
+predictions
+
+write.csv(x = predictions, file = "test_predict_HN.csv", row.names = FALSE) 
+
+```
+
+# Link al video con la explicacion
+https://youtu.be/YoqSxS9KB-s

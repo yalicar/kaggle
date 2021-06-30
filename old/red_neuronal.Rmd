@@ -1,0 +1,185 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+rm(list = ls())
+# LIBRERIAS Y DATOS
+# -----------------------------------------------------
+library(MASS); library(neuralnet); library(ggplot2)
+train<- read.csv("train.csv", sep=",")
+test<- read.csv("test.csv", sep = ",")
+
+kn=5
+
+train<- kNN(train,variable=c("total_bedrooms"),k=kn)
+train<- subset( train, select = -c(total_bedrooms_imp) )
+test<- kNN(test,variable=c("total_bedrooms"),k=kn)
+test<- subset(test, select = -c(total_bedrooms_imp) )
+
+
+# Reemplazo de outlier por el metodo knn de los datos de entrenamiento
+# ==============================================================================
+outliers <- boxplot(train$total_rooms, plot = FALSE)$out
+train[train$total_rooms %in% outliers, "total_rooms"] = NA
+train<- kNN(train,variable=c("total_rooms"),k=kn)
+train<- subset( train, select = -c(total_rooms_imp) )
+ 
+outliers <- boxplot(train$total_bedrooms, plot = FALSE)$out
+train[train$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+train<- kNN(train,variable=c("total_bedrooms"),k=kn)
+train<- subset(train, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(train$population, plot = FALSE)$out
+train[train$population %in% outliers, "population"] = NA
+train<- kNN(train,variable=c("population"),k=kn)
+train<- subset(train, select = -c(population_imp) )
+
+outliers <- boxplot(train$households, plot = FALSE)$out
+train[train$households %in% outliers, "households"] = NA
+train<- kNN(train,variable=c("households"),k=kn)
+train<- subset(train, select = -c(households_imp) )
+
+outliers <- boxplot(train$median_house_value, plot = FALSE)$out
+train[train$median_house_value %in% outliers, "median_house_value"] = NA
+train<- kNN(train,variable=c("median_house_value"),k=kn)
+train<- subset(train, select = -c(median_house_value_imp) )
+
+
+# Reemplazo de outlier por el metodo knn de los datos de prueba
+# ==============================================================================
+
+outliers <- boxplot(test$total_rooms, plot = FALSE)$out
+test[test$total_rooms %in% outliers, "total_rooms"] = NA
+test<- kNN(test,variable=c("total_rooms"),k=kn)
+test<- subset(test, select = -c(total_rooms_imp) )
+
+outliers <- boxplot(test$total_bedrooms, plot = FALSE)$out
+test[test$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+test<- kNN(test,variable=c("total_bedrooms"),k=kn)
+test<- subset(test, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(test$population, plot = FALSE)$out#
+test[test$population %in% outliers, "population"] = NA
+test<- kNN(test,variable=c("population"),k=kn)
+test<- subset(test, select = -c(population_imp) )
+
+outliers <- boxplot(test$households, plot = FALSE)$out
+test[test$households %in% outliers, "households"] = NA
+test<- kNN(test,variable=c("households"),k=kn)
+test<- subset( test, select = -c(households_imp) )
+
+
+
+subData<- train %>%
+  dplyr::select(ocean_proximity)
+
+OHE<-dummyVars("~.", data=train)
+train<-data.frame(predict(OHE, newdata=train))
+
+
+subData2<- test %>%
+  dplyr::select(ocean_proximity)
+
+OHE<-dummyVars("~.", data=test)
+test<-data.frame(predict(OHE, newdata=test))
+
+
+```
+
+
+
+```{r}
+
+set.seed(65)
+datos    <- train
+n        <- nrow(datos)
+muestra  <- sample(n, n * .9)
+train    <- datos[muestra, ]
+test     <- datos[-muestra, ]
+ 
+ 
+# NORMALIZACION DE VARIABLES
+# -----------------------------------------------------
+maxs      <- apply(train, 2, max)
+mins      <- apply(train, 2, min)
+datos_nrm <- as.data.frame(scale(datos, center = mins, scale = maxs - mins))
+train_nrm <- datos_nrm[muestra, ]
+test_nrm  <- datos_nrm[-muestra, ]
+ 
+ 
+# FORMULA
+# -----------------------------------------------------
+nms  <- names(train_nrm)
+frml <- as.formula(paste("median_house_value ~", paste(nms[!nms %in% "median_house_value"], collapse = " + ")))
+ 
+ 
+# MODELO
+# -----------------------------------------------------
+modelo.nn <- neuralnet(frml,
+                       data          = train_nrm,
+                       hidden        = c(8,5), # ver Notas para detalle 
+                       threshold     = 0.1,   # ver Notas para detalle
+                       algorithm     = "rprop+" 
+                       )
+ 
+ 
+
+```
+
+
+
+
+
+```{r}
+
+set.seed(65)
+
+# NORMALIZACION DE VARIABLES
+# -----------------------------------------------------
+maxs      <- apply(test, 2, max)
+mins      <- apply(test, 2, min)
+datos_nrm <- as.data.frame(scale(test, center = mins, scale = maxs - mins))
+train_nrm <- datos_nrm[muestra, ]
+test_nrm  <- datos_nrm
+
+
+# PREDICCION
+# -----------------------------------------------------
+pr.nn   <- compute(modelo.nn,within(test_nrm,rm(median_house_value)))
+ 
+# se transoforma el valor escalar al valor nominal original
+medv.predict <- pr.nn$net.result*(max(datos$median_house_value)-min(datos$median_house_value))+min(datos$median_house_value)
+medv.real    <- (test_nrm$median_house_value)*(max(datos$median_house_value)-min(datos$median_house_value))+min(datos$median_house_value)
+ 
+ 
+ 
+# SUMA DE ERROR CUADRATICO
+# -----------------------------------------------------
+(se.nn <- sum((medv.real - medv.predict)^2)/nrow(test_nrm))
+ 
+ 
+#GRAFICOS
+# -----------------------------------------------------
+# Errores
+qplot(x=medv.real, y=medv.predict, geom=c("point","smooth"), method="lm", 
+      main=paste("Real Vs Prediccion. Summa de Error Cuadratico=", round(se.nn,2)))
+# Red
+plot(modelo.nn)
+sqrt(se.nn)
+```
+
+
+```{r}
+#medv.predict
+
+pp <- medv.predict 
+out <- data.frame(
+    id=test$id,
+    median_house_value=pp,row.names=NULL)
+
+write.csv(x = out, file = "test_predict.csv", row.names = FALSE)
+
+
+```
+

@@ -1,0 +1,238 @@
+---
+title: "Proyecto Econometria Kaggle"
+output: html_notebook
+---
+
+#Libreria
+```{r}
+rm(list = ls())
+
+library(caret)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(gridExtra)
+library(Johnson)
+library(lmtest) #Funcionalidad del Modelo
+library(MASS)
+library(PerformanceAnalytics)
+```
+
+#Cargar Data
+```{r}
+train <- read.csv("train.csv", sep=",")
+test <- read.csv("test.csv", sep = ",")
+
+#dim(train)
+#dim(test)
+```
+
+# Imputacion Datos Fltantes - NA
+
+
+## Porcentaje de representacion NA
+
+
+NOTA:
+Se reviso la data en busca de NA y se encontro que:
+- La variable "total_bedrooms" es donde se encuentran esos NA
+- La data Train contiene 144 NA, los cuales representan el 0.009967467 de todos los datos.
+- La data Test contiene 63 NA, los que representan 0.01017278
+- Se procede a realizar pruebas para completar estos valores con la media de los datos o la mediana.
+
+
+Nota:
+- Se revisaron las estadisticas y se concluye que ambas metricas (media y mediana) conservan el comportamiento original de los datos.
+- Se procedera a completar los datos NA en la variable "total_bedrooms" con la media de los datos, para no perder la significancia estadistica.
+
+
+# Nueva data, con los NA completados con la media y la medina
+```{r}
+train$total_bedrooms <- ifelse(is.na(train$total_bedrooms),
+                               mean(train$total_bedrooms, na.rm = TRUE),
+                               train$total_bedrooms)
+
+test$total_bedrooms <- ifelse(is.na(test$total_bedrooms),
+                              mean(test$total_bedrooms, na.rm = TRUE),
+                              test$total_bedrooms)
+```
+
+
+# Codificacion de variables categricas a numericas
+```{r}
+table(train$ocean_proximity)
+table(test$ocean_proximity)
+```
+
+# Nueva data con codificacion de variables categoricas
+
+
+# Analisis Estadistico de las Variables
+```{r}
+summary(train)
+#summary(test)
+#names(train)
+```
+
+# Feature Scaling (tamano de los valores)
+
+## Normalizacion / Estandarizacion
+#```{r}
+#norm_data <- scale(train)
+
+train$longitude_std <- ((train$longitude - mean(train$longitude))/sd(train$longitude))
+train$latitude_std <- ((train$latitude - mean(train$latitude))/sd(train$latitude))
+train$housing_median_age_std <- ((train$housing_median_age - mean(train$housing_median_age))/sd(train$housing_median_age))
+train$total_rooms_std <- ((train$total_rooms - mean(train$total_rooms))/sd(train$total_rooms))
+train$total_bedrooms_std <- ((train$total_bedrooms - mean((train$total_bedrooms))/sd(train$total_bedrooms)))
+train$population_std <- ((train$population -  mean(train$population))/sd(train$population))
+train$households_std <- ((train$households - mean(train$households))/sd(train$households))
+train$median_income_std <- ((train$median_income - mean(train$median_income))/sd(train$median_income))
+#```
+
+## Normalizacion / Estandarizacion Variable Objetivo
+```{r}
+# train$median_house_value_std <- ((train$median_house_value - mean(train$median_house_value))/sd(train$median_house_value))
+```
+
+## Normalizacion / Estandarizacion DataTest
+#```{r}
+test$longitude_std <- ((test$longitude - mean(test$longitude))/sd(test$longitude))
+test$latitude_std <- ((test$latitude - mean(test$latitude))/sd(test$latitude))
+test$housing_median_age_std <- ((test$housing_median_age - mean(test$housing_median_age))/sd(test$housing_median_age))
+test$total_rooms_std <- ((test$total_rooms - mean(test$total_rooms))/sd(test$total_rooms))
+test$total_bedrooms_std <- ((test$total_bedrooms - mean((test$total_bedrooms))/sd(test$total_bedrooms)))
+test$population_std <- ((test$population -  mean(test$population))/sd(test$population))
+test$households_std <- ((test$households - mean(test$households))/sd(test$households))
+test$median_income_std <- ((test$median_income - mean(test$median_income))/sd(test$median_income))
+#```
+
+
+
+
+# Nueva data con variables transformadas
+```{r}
+train$longitude_t <- RE.Johnson(train$longitude)$transformed
+train$latitude_t <- RE.Johnson(train$latitude)$transformed
+train$housing_median_age_t <- asin((train$housing_median_age/max(train$housing_median_age))^(1/2))
+train$total_rooms_t <- RE.Johnson(train$total_rooms)$transformed
+train$total_bedrooms_t <- RE.Johnson(train$total_bedrooms)$transformed
+train$population_t <- RE.Johnson(train$population)$transformed
+train$households_t <- RE.Johnson(train$households)$transformed
+train$median_income_t <- RE.Johnson(train$median_income)$transformed
+train$median_house_value_t <- RE.Johnson(train$median_house_value)$transformed
+summary(train)
+```
+
+```{r}
+test$longitude_t <- RE.Johnson(test$longitude)$transformed
+test$latitude_t <- RE.Johnson(test$latitude)$transformed
+test$housing_median_age_t <- asin((test$housing_median_age/max(test$housing_median_age))^(1/2))
+test$total_rooms_t <- RE.Johnson(test$total_rooms)$transformed
+test$total_bedrooms_t <- RE.Johnson(test$total_bedrooms)$transformed
+test$population_t <- RE.Johnson(test$population)$transformed
+test$households_t <- RE.Johnson(test$households)$transformed
+test$median_income_t <- RE.Johnson(test$median_income)$transformed
+names(test)
+```
+
+# Manejo Outliers / Capping
+
+
+
+
+
+## Proceso Capping
+```{r}
+
+capping <- function(OutVar){
+  IQR <- quantile(OutVar, 0.75)-quantile(OutVar,0.25)
+  LS <- mean(OutVar) + 1.75*IQR
+  LI <- mean(OutVar) - 1.75*IQR
+  
+  OutVar <- ifelse(OutVar >= LS, LS, OutVar)
+  OutVar <- ifelse(OutVar <= LI, LI, OutVar)
+  return(OutVar)
+}
+
+```
+
+### Tratamiento Variables con Outliers en Data
+
+#### train
+```{r}
+
+train$longitude_outliers <- capping(train$longitude_t)
+train$latitude_outliers <- capping(train$latitude_t)
+train$housing_median_age_outliers <- capping(train$housing_median_age_t)
+train$total_rooms_outliers <- capping(train$total_rooms_t)
+train$total_bedrooms_outliers <- capping(train$total_bedrooms_t)
+train$population_outliers <- capping(train$population_t)
+train$households_outliers <- capping(train$households_t)
+train$median_income_outliers <- capping(train$median_income_t)
+train$median_house_value_outliers <- capping(train$median_house_value_t)
+
+
+
+```
+
+#### Tet
+```{r}
+
+test$longitude_outliers <- capping(test$longitude_t)
+test$latitude_outliers <- capping(test$latitude_t)
+test$housing_median_age_outliers <- capping(test$housing_median_age_t)
+test$total_rooms_outliers <- capping(test$total_rooms_t)
+test$total_bedrooms_outliers <- capping(test$total_bedrooms_t)
+test$population_outliers <- capping(test$population_t)
+test$households_outliers <- capping(test$households_t)
+test$median_income_outliers <- capping(test$median_income_t)
+
+
+```
+
+
+# Estimacion del Modelo
+
+```{r}
+
+data_proy_train <- dplyr::select(train, c(id, housing_median_age_outliers,
+                                          total_rooms_outliers, total_bedrooms_outliers, population_outliers,
+                                          households_outliers, median_income_outliers, median_house_value_t,ocean_proximity))
+#K-Folds.
+set.seed(1234)
+customControl<-trainControl(method = "repeatedcv", number=10, repeats=3, verboseIter = F)
+
+set.seed(1234)
+mod01 <-train(median_house_value_t ~., data_proy_train, method="lm", trControl=customControl)
+mod01
+summary(mod01)
+```
+
+```{r}
+predictions <- mod01 %>% predict(test)
+
+predictions<-as.data.frame(predictions)
+predictions$id <-test$id
+colnames(predictions)[colnames(predictions) == 'predictions'] <- 'median_house_value'
+
+predictions<-predictions %>%
+  dplyr::select(id,median_house_value)
+predictions
+
+write.csv(x = predictions, file = "test_predict.csv", row.names = FALSE)
+```
+
+
+
+## Ridge Regression:
+```{r}
+#library(MASS)
+#library(PerformanceAnalytics)
+
+#set.seed(1234)
+#ridge<-train(median_house_value_outliers ~., data_proy_train, 
+             #method="glmnet",
+             #tuneGrid = expand.grid(alpha = 0, lambda=seq(0.0001, 1, length=5)),
+             #trControl=customControl)
+```

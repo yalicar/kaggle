@@ -1,0 +1,74 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+---
+```{r}
+rm(list = ls())
+```
+
+
+```{r}
+# Cargando librerias
+# ==============================================================================
+library(skimr)
+library(caret)
+#library(rpart.plot)
+library(randomForest)
+library(plyr)
+library(dplyr)
+#library(raster)
+#library(sf)
+#library(rgdal)
+#library(tmap)
+#library(tmaptools)
+#library(Metrics)
+library(forcats)
+```
+
+```{r}
+train<- read.csv("train.csv", sep=",")
+test<- read.csv("test.csv", sep = ",")
+
+imp <- preProcess(train, method = "knnImpute")
+demo_imp <- predict(imp, train)
+demo_imp
+
+
+set.seed(42)
+knn.model <- train(median_house_value~., data=train, method = "knn",
+tuneLength = 10,
+preProcess = c("center", "scale","knnImpute"),
+trControl = trainctrl,
+metric="Kappa")
+
+```
+
+
+
+```{r}
+library(RANN)
+
+#parametros <- preProcess(test, method=c("knnImpute"))
+
+#test_2 <- predict(parametros, test)
+
+rf.predict <-predict(modRF, test)
+
+# Desnormalizar los datos
+# ==============================================================================
+
+
+predictions<-rf.predict
+predictions<-data.frame(predictions)
+predictions$id <-test$id
+colnames(predictions)[colnames(predictions) == 'predictions'] <- 'median_house_value'
+
+predictions<-predictions %>%
+  dplyr::select(id,median_house_value)
+predictions
+
+write.csv(x = predictions, file = "test_predict.csv", row.names = FALSE) 
+
+```

@@ -1,0 +1,255 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Libreria
+```{r}
+rm(list = ls())
+
+library(caret)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(gridExtra)
+library(Johnson)
+library(lmtest) #Funcionalidad del Modelo
+library(MASS)
+library(PerformanceAnalytics)
+
+```
+
+#Cargar Data
+```{r}
+train <- read.csv("train.csv", sep=",")
+train$longitude <- as.numeric(-1*train$longitude)
+train <- train[-1]
+
+test <- read.csv("test.csv", sep = ",")
+test$longitude <- as.numeric(-1*test$longitude)
+test <- test[-1]
+
+```
+
+# Nueva data, con los NA completados
+```{r}
+train$total_bedrooms <- ifelse(is.na(train$total_bedrooms),
+                               mean(train$total_bedrooms, na.rm = TRUE),
+                               train$total_bedrooms)
+
+```
+
+# Nueva data con codificacion de variables categoricas
+```{r}
+table(train$ocean_proximity)
+
+Freq_Ocean <- train %>% group_by(ocean_proximity) %>%
+  summarise(Freq_Ocean = n(), Density_Ocean = n()/nrow(train)) %>%
+  arrange(-Freq_Ocean)
+
+train <- merge(train, Freq_Ocean, by.x = "ocean_proximity", by.y = "ocean_proximity")
+
+```
+
+# Manejo de los Outliers
+
+## Funcion detectar Outliers
+```{r}
+detect_outliers <- function(df, colname){
+  
+  histPlot <- df %>%
+    ggplot(aes_string(x=colname)) +
+    geom_histogram(color='white', fill='orange', alpha=0.8)+
+    theme_minimal()
+  
+  boxPlot <- df %>%
+    ggplot(aes_string(x=colname))+
+    geom_boxplot()+
+    theme_minimal()
+  
+  qqPlot <- df %>%
+    ggplot(aes_string(sample=colname))+
+    stat_qq()+
+    stat_qq_line(col="red", lwd=1)+
+    theme_minimal()
+  
+  plotOut <- grid.arrange(histPlot, boxPlot, qqPlot, ncol=3)+
+  theme(aspect.ratio = 5/50)
+  
+  return(plotOut)
+}
+```
+
+## Proceso Capping
+```{r}
+
+capping <- function(OutVar){
+  IQR <- quantile(OutVar, 0.75)-quantile(OutVar,0.25)
+  LS <- mean(OutVar) + 1.75*IQR
+  LI <- mean(OutVar) - 1.75*IQR
+  
+  OutVar <- ifelse(OutVar >= LS, LS, OutVar)
+  OutVar <- ifelse(OutVar <= LI, LI, OutVar)
+  return(OutVar)
+}
+
+```
+
+#### Nueva data con el manejo de los Outliers
+```{r}
+train$longitude_outliers <- capping(train$longitude)
+train$latitude_outliers <- capping(train$latitude)
+train$housing_median_age_outliers <- capping(train$housing_median_age)
+train$total_rooms_outliers <- capping(train$total_rooms)
+train$total_bedrooms_outliers <- capping(train$total_bedrooms)
+train$population_outliers <- capping(train$population)
+train$households_outliers <- capping(train$households)
+train$median_income_outliers <- capping(train$median_income)
+train$median_house_value_outliers <- capping(train$median_house_value)
+
+```
+
+# Nueva data con variables transformadas
+```{r}
+train$longitude_t <- RE.Johnson(train$longitude_outliers)$transformed
+train$latitude_t <- RE.Johnson(train$latitude_outliers)$transformed
+train$housing_median_age_t <- asin((train$housing_median_age_outliers/max(train$housing_median_age_outliers))^(1/2))
+train$total_rooms_t <- RE.Johnson(train$total_rooms_outliers)$transformed
+train$total_bedrooms_t <- RE.Johnson(train$total_bedrooms_outliers)$transformed
+train$population_t <- RE.Johnson(train$population_outliers)$transformed
+train$households_t <- RE.Johnson(train$households_outliers)$transformed
+train$median_income_t <- RE.Johnson(train$median_income_outliers)$transformed
+train$median_house_value_t <- RE.Johnson(train$median_house_value_outliers)$transformed
+
+```
+
+# Feature Scaling
+```{r}
+train2 <- as.data.frame(train[-c(1,21,30)])
+train2 <- scale(train2)
+train2 <- as.data.frame(train2)
+
+names(train2)
+
+```
+
+
+# MODELO
+```{r}
+mod00 = lm(median_house_value ~., data = train2)
+summary(mod00)
+```
+
+# Mod02: primeras variables significativas
+```{r}
+dataMod02 <- as.data.frame(train2[c(9,1,2,16,17,21,27)])
+
+mod02 <- lm(median_house_value ~., data=dataMod02)
+summary(mod02)
+```
+
+# Validación Cruzada o k-fold Cross Validation
+
+## Particion de la data
+```{r}
+set.seed(123)
+index <- createDataPartition(train2$median_house_value, p=0.8, list = FALSE)
+dataTrain <- train2[index, ]
+dataTest <- train2[-index, ]
+
+```
+
+## Construir Mod03
+```{r}
+mod03 <- lm(median_house_value ~., data=dataTrain)
+summary(mod03)
+
+predict <- mod03 %>% predict(dataTest)
+data.frame( R2 = R2(predict, dataTest$median_house_value),
+            RMSE = RMSE(predict, dataTest$median_house_value),
+            MAE = MAE(predict, dataTest$median_house_value))
+
+```
+
+
+#Regularizaciones
+
+## Training Control
+```{r}
+set.seed(123)
+control = trainControl(method = 'repeatedcv', number = 10, repeats =5)
+```
+
+## Mod04: Ridge Regression
+```{r}
+library(glmnet)
+set.seed(123)
+ridge <-train(median_house_value~. , dataTrain, 
+             method="glmnet",
+             tuneGrid = expand.grid(alpha = 0, lambda=seq(0.0001, 1, length=5)),
+             trControl=control)
+ridge
+```
+
+## Visualizacion
+```{r}
+plot(ridge)
+plot(ridge$finalModel, xvar="lambda", label = TRUE)
+plot(ridge$finalModel, xvar="dev", label = TRUE)
+plot(varImp(ridge, scale=T))
+coef(ridge$finalModel, s=ridge$bestTune$lambda)
+
+```
+
+## Mod04: variables seleccionadas con Ridge Regression
+```{r}
+dataMod04 <- as.data.frame(train2[c(9,2,8,16,17,18,20)])
+
+mod04 <- lm(median_house_value ~., data=dataMod04)
+summary(mod04)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

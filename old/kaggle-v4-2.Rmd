@@ -1,0 +1,659 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+# Cargar librerias
+library(tidymodels)
+library(tidyverse)
+library(skimr)
+library(DataExplorer)
+library(ggpubr)
+library(univariateML)
+library(GGally)
+library(doParallel)
+library(VIM)
+library(randomForest)
+
+
+```
+
+```{r}
+# Cargar datos
+
+datos<- read.csv("train.csv", sep=",")
+test<- read.csv("test.csv", sep = ",")
+
+```
+
+```{r}
+skim(datos)
+```
+```{r}
+head(datos)
+```
+```{r}
+# Número de datos ausentes por variable
+datos %>% map_dbl(.f = function(x){sum(is.na(x))})
+```
+```{r}
+# Imputacion de datos faltantes usando knn
+# ==============================================================================
+kn=5
+
+datos<- kNN(datos,variable=c("total_bedrooms"),k=kn)
+datos<- subset( datos, select = -c(total_bedrooms_imp) )
+test<- kNN(test,variable=c("total_bedrooms"),k=kn)
+test<- subset(test, select = -c(total_bedrooms_imp) )
+```
+
+```{r}
+p1 <- ggplot(data = datos, aes(x = median_house_value)) +
+      geom_density(fill = "steelblue", alpha = 0.8) +
+      geom_rug(alpha = 0.1) +
+      scale_x_continuous(labels = scales::comma) +
+      labs(title = "Distribución original") +
+      theme_bw() 
+
+p2 <- ggplot(data = datos, aes(x = sqrt(median_house_value))) +
+      geom_density(fill = "steelblue", alpha = 0.8) +
+      geom_rug(alpha = 0.1) +
+      scale_x_continuous(labels = scales::comma) +
+      labs(title = "Transformación raíz cuadrada") +
+      theme_bw() 
+
+p3 <- ggplot(data = datos, aes(x = log(median_house_value))) +
+      geom_density(fill = "steelblue", alpha = 0.8) +
+      geom_rug(alpha = 0.1) +
+      scale_x_continuous(labels = scales::comma) +
+      labs(title = "Transformación logarítmica") +
+      theme_bw() 
+
+ggarrange(p1, p2, p3, ncol = 1, align = "v")
+```
+```{r}
+# Tabla de estadísticos principales 
+summary(datos$median_house_value)
+```
+```{r}
+# Se comparan únicamente las distribuciones con un dominio [0, +inf)
+# Cuanto menor el valor AIC mejor el ajuste
+comparacion_aic <- AIC(
+                    mlbetapr(datos$median_house_value),
+                    mlexp(datos$median_house_value),
+                    mlinvgamma(datos$median_house_value),
+                    mlgamma(datos$median_house_value),
+                    mllnorm(datos$median_house_value),
+                    mlrayleigh(datos$median_house_value),
+                    mlinvgauss(datos$median_house_value),
+                    mlweibull(datos$median_house_value),
+                    mlinvweibull(datos$median_house_value),
+                    mllgamma(datos$median_house_value)
+                   )
+comparacion_aic %>% rownames_to_column(var = "distribucion") %>% arrange(AIC)
+```
+
+```{r}
+# Visualizacion de variabls  continuas
+
+plot_density(
+  data    = datos %>% select(-median_house_value),
+  ncol    = 3,
+  title   = "Distribución variables continuas",
+  ggtheme = theme_bw(),
+  theme_config = list(
+                  plot.title = element_text(size = 16, face = "bold"),
+                  strip.text = element_text(colour = "black", size = 12, face = 2)
+                 )
+  )
+```
+
+```{r}
+datos <- datos %>%
+         mutate(
+           # Se le añade +0.1 a la antigüedad para que cuando la antigüedad es
+           # 0 no de -Inf
+           households     = log10(households + 0.1),
+           population = log10(population),
+           total_bedrooms = log10(total_bedrooms),
+           total_rooms = log10(total_rooms)
+         )
+```
+
+```{r}
+# La limitación de la función plot_scatterplot() es que no permite añadir una
+# curva de tendencia.
+datos %>%
+select_if(is.numeric) %>%
+select(-c(households, population, total_bedrooms,total_rooms)) %>%
+plot_scatterplot(
+  by   = "median_house_value",
+  ncol = 3,
+  geom_point_args = list(alpha = 0.1),
+  ggtheme = theme_bw(),
+  theme_config = list(
+                   strip.text = element_text(colour = "black", size = 12, face = 2),
+                   legend.position = "none"
+                  )
+)
+```
+```{r}
+custom_corr_plot <- function(variable1, variable2, df, alpha=0.3){
+  p <- df %>%
+       mutate(
+         # Truco para que se ponga el título estilo facet
+        title = paste(toupper(variable2), "vs", toupper(variable1))
+       ) %>%
+       ggplot(aes(x = !!sym(variable1), y = !!sym(variable2))) + 
+       geom_point(alpha = alpha) +
+       # Tendencia no lineal
+       geom_smooth(se = FALSE, method = "gam", formula =  y ~ splines::bs(x, 3)) +
+       # Tendencia lineal
+       geom_smooth(se = FALSE, method = "lm", color = "firebrick") +
+       facet_grid(. ~ title) +
+       theme_bw() +
+       theme(strip.text = element_text(colour = "black", size = 10, face = 2),
+             axis.title = element_blank())
+  return(p)
+}
+```
+
+```{r}
+
+variables_continuas <- c("id", "longitude", "latitude",
+                         "housing_median_age", "total_rooms", "total_bedrooms", "population",
+                         "households","median_income")
+
+plots <- map(
+            .x = variables_continuas,
+            .f = custom_corr_plot,
+            variable2 = "median_house_value",
+            df = datos
+         )
+
+ggarrange(plotlist = plots, ncol = 3, nrow = 4) %>%
+  annotate_figure(
+    top = text_grob("Correlación con median_house_value", face = "bold", size = 16,
+                    x = 0.13)
+  )
+```
+```{r}
+#datos <- datos %>%
+ #        select(-c(log_households, log_population, log_total_bedrooms,log_total_rooms))
+```
+
+```{r}
+# Correlacion d variables contuinuas
+plot_correlation(
+  data = datos,
+  type = "continuous",
+  title = "Matriz de correlación variables continuas",
+  theme_config = list(legend.position = "none",
+                      plot.title = element_text(size = 16, face = "bold"),
+                      axis.title = element_blank(),
+                      axis.text.x = element_text(angle = -45, hjust = +0.1)
+                     )
+)
+```
+```{r}
+GGally::ggscatmat(
+  data = datos %>% select_if(is.numeric),
+  alpha = 0.1) +
+theme_bw() +
+labs(title = "Correlación por pares") +
+theme(
+  plot.title = element_text(size = 16, face = "bold"),
+  axis.text = element_blank(),
+  strip.text = element_text(colour = "black", size = 6, face = 2)
+)
+```
+
+
+```{r}
+plot_bar(
+  datos,
+  ncol    = 3,
+  title   = "Número de observaciones por grupo",
+  ggtheme = theme_bw(),
+  theme_config = list(
+                   plot.title = element_text(size = 16, face = "bold"),
+                   strip.text = element_text(colour = "black", size = 12, face = 2),
+                   legend.position = "none"
+                  )
+)
+```
+```{r}
+table(datos$ocean_proximity)
+
+```
+```{r}
+datos <- datos %>%
+         mutate(
+           ocean_proximity = recode_factor(
+                        ocean_proximity,
+                        `ISLAND` = "2_mas",
+                        `NEAR BAY` = "2_mas",
+                      
+                      )
+         )
+
+table(datos$ocean_proximity)
+```
+```{r}
+custom_box_plot <- function(variable1, variable2, df, alpha=0.3){
+  p <- df %>%
+       mutate(
+         # Truco para que se ponga el título estilo facet
+        title = paste(toupper(variable2), "vs", toupper(variable1))
+       ) %>%
+       ggplot(aes(x = !!sym(variable1), y = !!sym(variable2))) + 
+       geom_violin(alpha = alpha) +
+       geom_boxplot(width = 0.1, outlier.shape = NA) +
+       facet_grid(. ~ title) +
+       theme_bw() +
+       theme(strip.text = element_text(colour = "black", size = 10, face = 2),
+             axis.title = element_blank())
+  return(p)
+}
+```
+
+```{r}
+variables_cualitativas <- c("ocean_proximity")
+
+plots <- map(
+            .x = variables_cualitativas,
+            .f = custom_box_plot,
+            variable2 = "median_house_value",
+            df = datos
+         )
+
+ggarrange(plotlist = plots, ncol = 1, nrow = 1) %>%
+  annotate_figure(
+    top = text_grob("Correlación con median_house_value", face = "bold", size = 16,
+                    x = 0.13)
+  )
+```
+
+
+
+
+
+
+
+```{r}
+# Reparto de datos en train y test
+set.seed(123)
+split_inicial <- initial_split(
+                    data   = datos,
+                    prop   = 0.8,
+                    strata = median_house_value
+                 )
+datos_train <- training(split_inicial)
+datos_test  <- testing(split_inicial)
+```
+
+
+```{r}
+summary(datos_train$median_house_value)
+```
+```{r}
+summary(datos_test$median_house_value)
+```
+```{r}
+# Se almacenan en un objeto `recipe` todos los pasos de preprocesado y, finalmente,
+# se aplican a los datos.
+transformer <- recipe(
+                  formula = median_house_value
+                  ~ .,
+                  data =  datos_train
+               ) %>%
+               #step_naomit(all_predictors()) %>%
+               #step_nzv(all_predictors()) %>%
+               step_center(all_numeric(), -all_outcomes()) %>%
+               step_scale(all_numeric(), -all_outcomes()) #%>%
+              # step_dummy(all_nominal(), -all_outcomes())
+
+
+transformer
+```
+```{r}
+# Se entrena el objeto recipe
+transformer_fit <- prep(transformer)
+
+# Se aplican las transformaciones al conjunto de entrenamiento y de test
+datos_train_prep <- bake(transformer_fit, new_data = datos_train)
+datos_test_prep  <- bake(transformer_fit, new_data = datos_test)
+
+glimpse(datos_train_prep)
+```
+```{r}
+modelo_tree <- decision_tree(mode = "regression") %>%
+               set_engine(engine = "rpart")
+modelo_tree
+```
+```{r}
+# Entrenamiento empleando fórmula
+modelo_tree_fit <- modelo_tree %>%
+                   fit(
+                     formula = median_house_value ~ .,
+                     data    = datos_train_prep
+                   )
+```
+
+```{r}
+# Entrenamiento empleando x e Y.
+variable_respuesta <- "median_house_value"
+predicores <- setdiff(colnames(datos_train_prep), variable_respuesta)
+modelo_tree_fit <- modelo_tree %>%
+                   fit_xy(
+                     x = datos_train_prep[, predicores],
+                     y = datos_train_prep[[variable_respuesta]]
+                   )
+```
+
+```{r}
+modelo_tree_fit$fit
+```
+```{r}
+set.seed(1234)
+cv_folds <- vfold_cv(
+              data    = datos_train,
+              v       = 3,
+              repeats = 10,
+              strata  = median_house_value
+            )
+head(cv_folds)
+```
+```{r}
+modelo_tree <- decision_tree(mode = "regression") %>%
+               set_engine(engine = "rpart")
+
+validacion_fit <- fit_resamples(
+                    object       = modelo_tree,
+                    # El objeto recipe no tiene que estar entrenado
+                    preprocessor = transformer,
+                    # Las resamples se tienen que haber creado con los datos sin 
+                    # prerocesar
+                    resamples    = cv_folds,
+                    metrics      = metric_set(rmse,mae),
+                    control      = control_resamples(save_pred = TRUE)
+                  )
+
+head(validacion_fit)
+```
+
+```{r}
+# Métricas promedio de todas las particiones
+validacion_fit %>% collect_metrics(summarize = TRUE)
+```
+
+```{r}
+# Métricas individuales de cada una de las particiones
+validacion_fit %>% collect_metrics(summarize = FALSE) %>% head()
+```
+```{r}
+# Valores de validación (mae y rmse) obtenidos en cada partición y repetición.
+p1 <- ggplot(
+        data = validacion_fit %>% collect_metrics(summarize = FALSE),
+        aes(x = .estimate, fill = .metric)) +
+      geom_density(alpha = 0.5) +
+      theme_bw() 
+p2 <- ggplot(
+        data = validacion_fit %>% collect_metrics(summarize = FALSE),
+        aes(x = .metric, y = .estimate, fill = .metric, color = .metric)) +
+      geom_boxplot(outlier.shape = NA, alpha = 0.1) +
+      geom_jitter(width = 0.05, alpha = 0.3) +
+      coord_flip() +
+      theme_bw() +
+      theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+  
+ggarrange(p1, p2, nrow = 2, common.legend = TRUE, align = "v") %>% 
+annotate_figure(
+  top = text_grob("Distribución errores de validación cruzada", size = 15)
+)
+```
+```{r}
+# Predicciones individuales de cada observación.
+# Si summarize = TRUE se agregan todos los valores predichos a nivel de
+# observación.
+validacion_fit %>% collect_predictions(summarize = TRUE) %>% head()
+```
+```{r}
+p1 <- ggplot(
+        data = validacion_fit %>% collect_predictions(summarize = TRUE),
+        aes(x = median_house_value, y = .pred)
+      ) +
+      geom_point(alpha = 0.3) +
+      geom_abline(slope = 1, intercept = 0, color = "firebrick") +
+      labs(title = "Valor predicho vs valor real") +
+      theme_bw()
+
+
+p2 <- ggplot(
+        data = validacion_fit %>% collect_predictions(summarize = TRUE),
+        aes(x = .row, y = median_house_value - .pred)
+      ) +
+      geom_point(alpha = 0.3) +
+      geom_hline(yintercept =  0, color = "firebrick") +
+      labs(title = "Residuos del modelo") +
+      theme_bw()
+
+p3 <- ggplot(
+        data = validacion_fit %>% collect_predictions(summarize = TRUE),
+        aes(x = median_house_value - .pred)
+      ) +
+      geom_density() + 
+      labs(title = "Distribución residuos del modelo") +
+      theme_bw()
+
+p4 <- ggplot(
+        data = validacion_fit %>% collect_predictions(summarize = TRUE),
+        aes(sample = median_house_value - .pred)
+      ) +
+      geom_qq() +
+     geom_qq_line(color = "firebrick") +
+      labs(title = "Q-Q residuos del modelo") +
+      theme_bw()
+
+ggarrange(plotlist = list(p1, p2, p3, p4)) %>%
+annotate_figure(
+  top = text_grob("Distribución residuos", size = 15, face = "bold")
+)
+```
+```{r}
+registerDoParallel(cores = detectCores() - 1)
+set.seed(2020)
+modelo_tree <- decision_tree(mode = "regression") %>%
+               set_engine(engine = "rpart")
+
+validacion_fit <- fit_resamples(
+                    object       = modelo_tree,
+                    preprocessor = transformer,
+                    resamples    = cv_folds,
+                    metrics      = metric_set(rmse, mae),
+                    control      = control_resamples(save_pred = TRUE)
+                  )
+
+stopImplicitCluster()
+```
+
+
+
+```{r}
+# DEFINICIÓN DEL MODELO Y DE LOS HIPERPARÁMETROS A OPTIMIZAR
+# =============================================================================
+modelo_tree <- decision_tree(
+                 mode       = "regression",
+                 tree_depth = tune(),
+                 #mtry = tune(),
+                 min_n      = tune()
+               ) %>%
+               set_engine(engine = "rpart")
+
+# DEFINICIÓN DE LA ESTRATEGIA DE VALIDACIÓN Y CREACIÓN DE PARTICIONES
+# =============================================================================
+set.seed(1234)
+cv_folds <- vfold_cv(
+              data    = datos_train,
+              v       = 5,
+              strata  = median_house_value
+             )
+
+# EJECUCIÓN DE LA OPTIMIZACIÓN DE HIPERPARÁMETROS
+# =============================================================================
+registerDoParallel(cores = parallel::detectCores() - 1)
+
+grid_fit <- tune_grid(
+              object       = modelo_tree,
+              # El objeto recipe no tiene que estar entrenado
+              preprocessor = transformer,
+              # Las resamples se tienen que haber creado con los datos sin 
+              # prerocesar
+              resamples    = cv_folds,
+              metrics      = metric_set(rmse, mae),
+              control      = control_grid(save_pred = TRUE),
+              # Número de combinaciones generadas automáticamente
+              grid         = 70
+            )
+stopImplicitCluster()
+```
+
+```{r}
+# grid_fit %>% unnest(.metrics) %>% head()
+grid_fit %>% collect_metrics(summarize = TRUE) %>% head()
+```
+
+```{r}
+grid_fit %>% show_best(metric = "rmse", n = 5)
+```
+```{r}
+grid_fit %>%
+  collect_metrics(summarize = TRUE) %>%
+  filter(.metric == "rmse") %>%
+  select(-c(.estimator, n)) %>%
+  pivot_longer(
+    cols = c(tree_depth, min_n),
+    values_to = "value",
+    names_to = "parameter"
+  ) %>%
+  ggplot(aes(x = value, y = mean, color = parameter)) +
+  geom_point() +
+  geom_line() + 
+  labs(title = "Evolución del error en función de los hiperparámetros") +
+  facet_wrap(facets = vars(parameter), nrow = 2, scales = "free") +
+  theme_bw() + 
+  theme(legend.position = "none")
+```
+
+```{r}
+grid_fit %>%
+  collect_metrics(summarize = TRUE) %>%
+  filter(.metric == "rmse") %>%
+  select(-c(.estimator, n)) %>%
+  ggplot(aes(x = tree_depth, y = min_n, color = mean, size = mean)) +
+  geom_point() +
+  scale_color_viridis_c() +
+  labs(title = "Evolución del error en función de los hiperparámetros") +
+  theme_bw()
+```
+```{r}
+# DEFINICIÓN DEL MODELO Y DE LOS HIPERPARÁMETROS A OPTIMIZAR
+# =============================================================================
+modelo_tree <- decision_tree(
+                 mode       = "regression",
+                 tree_depth = tune(),
+                 min_n      = tune()
+               ) %>%
+               set_engine(engine = "rpart")
+
+# DEFINICIÓN DE LA ESTRATEGIA DE VALIDACIÓN Y CREACIÓN DE PARTICIONES
+# =============================================================================
+set.seed(1234)
+cv_folds <- vfold_cv(
+              data    = datos_train,
+              v       = 5,
+              strata  = median_house_value
+             )
+
+# GRID DE HIPERPARÁMETROS
+# =============================================================================
+set.seed(1234)
+hiperpar_grid <- grid_random(
+                  # Rango de búsqueda para cada hiperparámetro
+                  tree_depth(range = c(1, 10), trans = NULL),
+                  min_n(range      = c(2, 100), trans = NULL),
+                  # Número combinaciones aleatorias probadas
+                  size = 50
+                )
+
+# EJECUCIÓN DE LA OPTIMIZACIÓN DE HIPERPARÁMETROS
+# =============================================================================
+registerDoParallel(cores = parallel::detectCores() - 1)
+
+grid_fit <- tune_grid(
+              object       = modelo_tree,
+              # El objeto recipe no tiene que estar entrenado
+              preprocessor = transformer,
+              # Las resamples se tienen que haber creado con los datos sin 
+              # prerocesar
+              resamples    = cv_folds,
+              metrics      = metric_set(rmse, mae),
+              control      = control_resamples(save_pred = TRUE),
+              # Hiperparámetros
+              grid         = hiperpar_grid
+            )
+stopImplicitCluster()
+```
+
+```{r}
+grid_fit %>% show_best(metric = "rmse", n = 5)
+
+```
+
+```{r}
+
+# Selección de los mejores hiperparámetros encontrados
+mejores_hiperpar <- select_best(grid_fit, metric = "rmse")
+```
+```{r}
+modelo_tree_final <- finalize_model(x = modelo_tree, parameters = mejores_hiperpar)
+modelo_tree_final
+```
+```{r}
+modelo_tree_final_fit  <- modelo_tree_final %>%
+                          fit(
+                            formula = median_house_value ~ .,
+                            data    = datos_train_prep
+                            #data   = bake(transformer_fit, datos_train)
+                          )
+```
+
+```{r}
+datos_test_prep  <- bake(transformer_fit, new_data = test)
+
+table(datos$ocean_proximity)
+predicciones <- modelo_tree_final_fit %>%
+                predict(
+                  new_data = datos_test_prep,
+                  #new_data = bake(transformer_fit, datos_test),
+                  type = "numeric"
+                )
+predicciones %>% head()
+```
+```{r}
+predictions<-predicciones
+predictions<-data.frame(predictions)
+predictions$id <-test$id
+
+colnames(predictions)[colnames(predictions) == '.pred'] <- 'median_house_value'
+
+
+predictions<-predictions %>%
+  dplyr::select(id,median_house_value)
+#predictions
+# predictions$median_house_value<-(predictions$median_house_value)^2
+predictions
+write.csv(x = predictions, file = "test_predict.csv", row.names = FALSE) 
+```
+
+

@@ -1,0 +1,206 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+#Libreria
+```{r}
+rm(list = ls())
+
+library(caret)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(gridExtra)
+library(Johnson)
+library(lmtest) #Funcionalidad del Modelo
+library(MASS)
+library(PerformanceAnalytics)
+library(Hmisc)
+library(tidyverse)
+library(ISLR)
+library(caret)
+library(reshape2)
+
+library(VIM)
+library(randomForest)
+
+```
+
+#Cargar Data
+```{r}
+train_1 <- read.csv("train.csv", sep=",")
+test_1 <- read.csv("test.csv", sep = ",")
+train_1
+test_1
+```
+#visualizacion de variables
+```{r}
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...) {
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    Cor <- abs(cor(x, y)) # Elimina la función abs si lo prefieres
+    txt <- paste0(prefix, format(c(Cor, 0.123456789), digits = digits)[1])
+    if(missing(cex.cor)) {
+        cex.cor <- 0.4 / strwidth(txt)
+    }
+    text(0.5, 0.5, txt,
+         cex = 1 + cex.cor * Cor) # Escala el texto al nivel de correlación
+}
+pairs(train_1[,4:10],
+      upper.panel = panel.cor,    # Panel de correlación
+      lower.panel = panel.smooth)
+```
+#revision de N/A
+```{r}
+test_1<- kNN(test_1,variable=c("total_bedrooms"),k=8)
+
+porcentajeNA<-as.data.frame(apply(test_1, MARGIN = 2, function(col) mean(is.na(col))))
+colnames(porcentajeNA)<-c("porcentaje")
+porcentajeNA
+```
+```{r}
+train_1<- kNN(train_1,variable=c("total_bedrooms"),k=7)
+train_1 <- subset( train_1, select = -c(total_bedrooms_imp) )
+```
+
+
+
+# grafica boxpplot para visualizar los outliers
+```{r}
+subData<-train_1 %>%
+  dplyr::select(colnames(train_1[,-10]))
+
+dataX<-melt(subData)
+
+dataX %>%
+  ggplot(aes(x=variable, y=value)) +
+  geom_boxplot()
+```
+# reemplazo de outliers 
+```{r}
+outliers <- boxplot(train_1$total_rooms, plot = FALSE)$out
+train_1[train_1$total_rooms %in% outliers, "total_rooms"] = NA
+train_1<- kNN(train_1,variable=c("total_rooms"),k=7)
+train_1 <- subset( train_1, select = -c(total_rooms_imp) )
+
+outliers <- boxplot(train_1$total_bedrooms, plot = FALSE)$out
+train_1[train_1$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+train_1<- kNN(train_1,variable=c("total_bedrooms"),k=7)
+train_1 <- subset( train_1, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(train_1$population, plot = FALSE)$out
+train_1[train_1$population %in% outliers, "population"] = NA
+train_1<- kNN(train_1,variable=c("population"),k=7)
+train_1 <- subset( train_1, select = -c(population_imp) )
+
+outliers <- boxplot(train_1$households, plot = FALSE)$out
+train_1[train_1$households %in% outliers, "households"] = NA
+train_1<- kNN(train_1,variable=c("households"),k=7)
+train_1 <- subset( train_1, select = -c(households_imp) )
+
+outliers <- boxplot(train_1$median_house_value, plot = FALSE)$out
+train_1[train_1$median_house_value %in% outliers, "median_house_value"] = NA
+train_1<- kNN(train_1,variable=c("median_house_value"),k=7)
+train_1 <- subset( train_1, select = -c(median_house_value_imp) )
+
+
+
+
+outliers <- boxplot(test_1$total_rooms, plot = FALSE)$out
+test_1[test_1$total_rooms %in% outliers, "total_rooms"] = NA
+test_1<- kNN(test_1,variable=c("total_rooms"),k=7)
+test_1 <- subset( test_1, select = -c(total_rooms_imp) )
+
+outliers <- boxplot(test_1$total_bedrooms, plot = FALSE)$out
+test_1[test_1$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+test_1<- kNN(test_1,variable=c("total_bedrooms"),k=7)
+test_1 <- subset( test_1, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(test_1$population, plot = FALSE)$out
+test_1[test_1$population %in% outliers, "population"] = NA
+test_1<- kNN(test_1,variable=c("population"),k=7)
+test_1 <- subset( test_1, select = -c(population_imp) )
+
+outliers <- boxplot(test_1$households, plot = FALSE)$out
+test_1[test_1$households %in% outliers, "households"] = NA
+test_1<- kNN(test_1,variable=c("households"),k=7)
+test_1 <- subset( test_1, select = -c(households_imp) )
+```
+# grafica boxpplot para visualizar los outliers
+```{r}
+subData<-train_1 %>%
+  dplyr::select(colnames(train_1))
+
+dataX<-melt(subData)
+
+dataX %>%
+  ggplot(aes(x=variable, y=value)) +
+  geom_boxplot()
+```
+```{r}
+# Transformacion de varibales
+# ==============================================================================
+
+```
+
+
+
+
+
+
+```{r}
+# Random Forest Model
+# ==============================================================================
+
+# librerias
+# ==============================================================================
+library(randomForest)
+library(mlbench)
+library(caret)
+library(e1071)
+
+mtry <- sqrt(ncol(train_1))
+#ntree: Number of trees to grow.
+ntree <- 3
+
+
+control <- trainControl(method='repeatedcv', 
+                        number=10, 
+                        repeats=3,
+                        search = 'random')
+
+#Random generate 15 mtry values with tuneLength = 15
+set.seed(1)
+rf_random <- train(median_house_value ~ .,
+                   data = train_1,
+                   method = 'rf',
+                   metric = 'RMSE',
+                   tuneLength  = 15, 
+                   trControl = control)
+print(rf_random)
+
+```
+
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+
+
+
+
+```{r}
+
+```
+

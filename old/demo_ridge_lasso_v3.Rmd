@@ -1,0 +1,391 @@
+---
+title: "Regularizaciones"
+output: html_notebook
+---
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(MASS)
+library(ggplot2)
+library(dplyr)
+library(caret)
+library(PerformanceAnalytics)
+
+library(VIM)
+library(Johnson)
+rm(list = ls())
+```
+
+```{r}
+train<-read.csv("train.csv", sep=",")
+test<- read.csv("test.csv", sep = ",")
+
+train<- kNN(train,variable=c("total_bedrooms"),k=7)
+train<- subset( train, select = -c(total_bedrooms_imp) )
+test<- kNN(test,variable=c("total_bedrooms"),k=7)
+test<- subset(test, select = -c(total_bedrooms_imp) )
+```
+
+```{r}
+# Reemplazo de outlier por el metodo knn de los datos de entrenamiento
+# ==============================================================================
+
+outliers <- boxplot(train$total_rooms, plot = FALSE)$out
+train[train$total_rooms %in% outliers, "total_rooms"] = NA
+train<- kNN(train,variable=c("total_rooms"),k=7)
+train<- subset( train, select = -c(total_rooms_imp) )
+
+outliers <- boxplot(train$total_bedrooms, plot = FALSE)$out
+train[train$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+train<- kNN(train,variable=c("total_bedrooms"),k=7)
+train<- subset(train, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(train$population, plot = FALSE)$out
+train[train$population %in% outliers, "population"] = NA
+train<- kNN(train,variable=c("population"),k=7)
+train<- subset(train, select = -c(population_imp) )
+
+outliers <- boxplot(train$households, plot = FALSE)$out
+train[train$households %in% outliers, "households"] = NA
+train<- kNN(train,variable=c("households"),k=7)
+train<- subset(train, select = -c(households_imp) )
+
+outliers <- boxplot(train$median_income, plot = FALSE)$out
+train[train$median_income %in% outliers, "median_income"] = NA
+train<- kNN(train,variable=c("median_income"),k=7)
+train<- subset(train, select = -c(median_income_imp) )
+
+outliers <- boxplot(train$median_house_value, plot = FALSE)$out
+train[train$median_house_value %in% outliers, "median_house_value"] = NA
+train<- kNN(train,variable=c("median_house_value"),k=7)
+train<- subset(train, select = -c(median_house_value_imp) )
+```
+
+```{r}
+# Reemplazo de outlier por el metodo knn de los datos de prueba
+# ==============================================================================
+
+outliers <- boxplot(test$total_rooms, plot = FALSE)$out
+test[test$total_rooms %in% outliers, "total_rooms"] = NA
+test<- kNN(test,variable=c("total_rooms"),k=7)
+test<- subset(test, select = -c(total_rooms_imp) )
+
+outliers <- boxplot(test$total_bedrooms, plot = FALSE)$out
+test[test$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+test<- kNN(test,variable=c("total_bedrooms"),k=7)
+test<- subset(test, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(test$population, plot = FALSE)$out
+test[test$population %in% outliers, "population"] = NA
+test<- kNN(test,variable=c("population"),k=7)
+test<- subset(test, select = -c(population_imp) )
+
+outliers <- boxplot(test$households, plot = FALSE)$out
+test[test$households %in% outliers, "households"] = NA
+test<- kNN(test,variable=c("households"),k=7)
+test<- subset( test, select = -c(households_imp) )
+
+outliers <- boxplot(test$median_income, plot = FALSE)$out
+test[test$median_income %in% outliers, "median_income"] = NA
+test<- kNN(test,variable=c("median_income"),k=7)
+test<- subset(test, select = -c(median_income_imp) )
+
+```
+
+```{r}
+# Transformacion variables data entrenamiento
+# ===============================================
+
+train$longitude <- RE.Johnson(train$longitude)$transformed
+train$latitude <- RE.Johnson(train$latitude)$transformed
+train$housing_median_age <- asin((train$housing_median_age/max(train$housing_median_age))^(1/2))
+train$total_rooms <- RE.Johnson(train$total_rooms)$transformed
+train$total_bedrooms <- RE.Johnson(train$total_bedrooms)$transformed
+train$population <- RE.Johnson(train$population)$transformed
+train$households <- RE.Johnson(train$households)$transformed
+train$median_income <- RE.Johnson(train$median_income)$transformed
+train$median_house_value <- RE.Johnson(train$median_house_value)$transformed
+
+# Transformacion variables data prueba
+# ===============================================
+test$longitude <- RE.Johnson(test$longitude)$transformed
+test$latitude <- RE.Johnson(test$latitude)$transformed
+test$housing_median_age <- asin((test$housing_median_age/max(test$housing_median_age))^(1/2))
+test$total_rooms <- RE.Johnson(test$total_rooms)$transformed
+test$total_bedrooms <- RE.Johnson(test$total_bedrooms)$transformed
+test$population <- RE.Johnson(test$population)$transformed
+test$households <- RE.Johnson(test$households)$transformed
+test$median_income <- RE.Johnson(test$median_income)$transformed
+
+```
+
+```{r}
+# Reemplazo de outlier por el metodo knn de los datos de entrenamiento
+# ==============================================================================
+outliers <- boxplot(train$longitude, plot = FALSE)$out
+train[train$longitude %in% outliers, "longitude"] = NA
+train<- kNN(train,variable=c("longitude"),k=7)
+train<- subset(train, select = -c(longitude_imp) )
+
+outliers <- boxplot(train$total_rooms, plot = FALSE)$out
+train[train$total_rooms %in% outliers, "total_rooms"] = NA
+train<- kNN(train,variable=c("total_rooms"),k=7)
+train<- subset( train, select = -c(total_rooms_imp) )
+
+outliers <- boxplot(train$total_bedrooms, plot = FALSE)$out
+train[train$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+train<- kNN(train,variable=c("total_bedrooms"),k=7)
+train<- subset(train, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(train$population, plot = FALSE)$out
+train[train$population %in% outliers, "population"] = NA
+train<- kNN(train,variable=c("population"),k=7)
+train<- subset(train, select = -c(population_imp) )
+
+outliers <- boxplot(train$households, plot = FALSE)$out
+train[train$households %in% outliers, "households"] = NA
+train<- kNN(train,variable=c("households"),k=7)
+train<- subset(train, select = -c(households_imp) )
+
+outliers <- boxplot(train$median_income, plot = FALSE)$out
+train[train$median_income %in% outliers, "median_income"] = NA
+train<- kNN(train,variable=c("median_income"),k=7)
+train<- subset(train, select = -c(median_income_imp) )
+
+outliers <- boxplot(train$median_house_value, plot = FALSE)$out
+train[train$median_house_value %in% outliers, "median_house_value"] = NA
+train<- kNN(train,variable=c("median_house_value"),k=7)
+train<- subset(train, select = -c(median_house_value_imp) )
+
+# Reemplazo de outlier por el metodo knn de los datos de Prueba
+# ==============================================================================
+outliers <- boxplot(test$total_rooms, plot = FALSE)$out
+test[test$total_rooms %in% outliers, "total_rooms"] = NA
+test<- kNN(test,variable=c("total_rooms"),k=7)
+test<- subset(test, select = -c(total_rooms_imp) )
+
+outliers <- boxplot(test$total_bedrooms, plot = FALSE)$out
+test[test$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+test<- kNN(test,variable=c("total_bedrooms"),k=7)
+test<- subset(test, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(test$population, plot = FALSE)$out
+test[test$population %in% outliers, "population"] = NA
+test<- kNN(test,variable=c("population"),k=7)
+test<- subset(test, select = -c(population_imp) )
+
+outliers <- boxplot(test$households, plot = FALSE)$out
+test[test$households %in% outliers, "households"] = NA
+test<- kNN(test,variable=c("households"),k=7)
+test<- subset( test, select = -c(households_imp) )
+
+outliers <- boxplot(test$median_income, plot = FALSE)$out
+test[test$median_income %in% outliers, "median_income"] = NA
+test<- kNN(test,variable=c("median_income"),k=7)
+test<- subset(test, select = -c(median_income_imp) )
+```
+
+```{r echo=TRUE}
+dataset<-train
+dataset<-dataset
+glimpse(dataset)
+
+```
+
+```{r echo=TRUE}
+chart.Correlation(dataset[, c(1:9)],hist=T, cex=2)
+```
+```{r echo=TRUE}
+set.seed(222)
+index<-createDataPartition(dataset$id, p=0.7, list=FALSE)
+dataTrain<-dataset[index, ]
+dataTest<-dataset[-index, ]
+```
+
+
+```{r echo=TRUE}
+#K-Folds.
+set.seed(1234)
+customControl<-trainControl(method = "repeatedcv", 
+                            number=10,
+                            repeats=5, 
+                            verboseIter = F)
+```
+
+```{r echo=TRUE}
+set.seed(1234)
+lm<-train(median_house_value ~., 
+          dataTrain,
+          method="lm",
+          trControl=customControl)
+lm
+```
+```{r echo=TRUE}
+lm$results
+```
+
+```{r echo=TRUE}
+summary(lm)
+```
+
+## Ridge Regression:
+
+La Regresión Rigde, también conocida como **Tikhonov regularization**, es un mécanismo de regularización para modelos de regresión agregando una penalización (termino de regularización) relativa al tamaño de los coeficientes de la regresión lineal calculada con MCO. En este caso, los coeficientes calculados minimizan la suma de los cuadrados de los residuos penalizada al añadir el cuadrado de la norma L2 del vector formado por los coeficientes, esto es:
+
+$$ \hat{Y}_{ridge}=\sum_{i=1}^n(y_i - f(\beta_i))^2+\lambda\sum_{j=1}^p\beta_j^2  $$
+Donde $\lambda$ es el coeficiente de penalización, cuando mayor se el valor los coeficientes en la regresión serán menores. Cuando este valor sea cero, la Regresión de Ridge será la misma regresión producida por los MCO.
+
+Recordemos que la norma L2 se refiere a la distancia Euclidiana del vector formado por los parámetros hasta el centro de coordenadas en el hiperplano.
+
+##### Al agregar la regularización de Ridge, el problema que se está resolviendo geometricamente es el siguiente:
+<center>
+![Ridge.png](ridge.png)
+</center>
+
+### Grid Search:
+Para poder desarrollar esta regresión en R, se debe generar una busqueda del valor correcto de $\lambda$ esto debido a que al modificar dicho valor, obtenemos un resultado de penalización distinto, por tanto el resultado de los coeficientes puede variar según sea el valor de $\lambda$. 
+```{r echo=TRUE}
+set.seed(1234)
+ridge<-train(median_house_value ~. ,
+             dataTrain, 
+             method="glmnet",
+             tuneGrid = expand.grid(alpha = 0,
+                                    lambda=seq(0.0001, 1, length=5)),
+             trControl=customControl)
+```
+
+```{r echo=TRUE}
+plot(ridge)
+```
+```{r echo=TRUE}
+ridge
+```
+```{r echo=TRUE}
+plot(ridge$finalModel, xvar="lambda", label = TRUE)
+
+```
+```{r echo=TRUE}
+plot(ridge$finalModel, xvar="dev", label = TRUE)
+```
+```{r echo=TRUE}
+plot(varImp(ridge, scale=T))
+```
+```{r echo=TRUE}
+coef(ridge$finalModel, s=ridge$bestTune$lambda)
+```
+
+#### ¿Cuando usar Ridge Regression?:
+En general Ridge Regression se utilizan en casos donde tenemos conocimiento que de que las variables predictoras tiene alguna relación y aportan algo a la al modelo entre dichas variables y la variable a predecir, esto debido a que el termino de regularización no suprime las variables del modelo.
+
+
+# Lasso Regression:
+
+La Regresión LASSO acronimo de (Least Absolute Shrinkage and Selection Operator), es un mécanismo de regularización para modelos de regresión agregando una penalización (termino de regularización) relativa al tamaño de los coeficientes de la regresión lineal calculada con MCO. En este caso, los coeficientes calculados minimizan la suma de los cuadrados de los residuos penalizada al añadir la norma L1 del vector formado por los coeficientes como termino de regularización, esto es:
+
+$$ \hat{Y}_{lasso}=\sum_{i=1}^n(y_i - f(\beta_i))^2+\lambda\sum_{j=1}^p|\beta_j|  $$
+
+Donde $\lambda$ es el coeficiente de penalización, cuando mayor se el valor los coeficientes en la regresión serán menores. Cuando este valor sea cero, la Regresión de LASSO será la misma regresión producida por los MCO.
+
+Recordemos que la norma L1 se refiere a la distancia de Manhathan del vector formado por los parámetros hasta el centro de coordenadas en el hiperplano.
+
+
+##### Al agregar la regularización de LASSO, el problema que se está resolviendo geometricamente es el siguiente:
+<center>
+![Lasso.png](lasso.png)
+</center>
+
+### Grid Search:
+Para poder desarrollar esta regresión en R, se debe generar una busqueda del valor correcto de $\lambda$ esto debido a que al modificar dicho valor, obtenemos un resultado de penalización distinto, por tanto el resultado de los coeficientes puede variar según sea el valor de $\lambda$. 
+```{r echo=TRUE}
+set.seed(1234)
+lasso<-train(median_house_value ~. ,
+             dataTrain, 
+             method="glmnet",
+             tuneGrid = expand.grid(alpha = 1,
+                                    lambda=seq(0.0001, 1, length=5)),
+             trControl=customControl)
+```
+
+```{r echo=TRUE}
+plot(lasso)
+```
+```{r echo=TRUE}
+plot(lasso$finalModel, xvar = "lambda", label=TRUE)
+```
+```{r echo=TRUE}
+plot(lasso$finalModel, xvar = "dev", label=TRUE)
+```
+```{r echo=TRUE}
+plot(varImp(lasso, scale=T))
+```
+
+
+
+#### ¿Cuándo usar Lasso Regression?:
+En general Lasso Regression se utilizan en casos donde tenemos conocimiento que de que algunas de las variables predictoras tiene una buena relación estadísticamente entre dichas variables y la variable a predecir pero otras no, de este modo el parámetro de regularización de Lasso terminará suprimiendo las variables que aportan poco o nada al modelo.
+
+# Elastic Net Regression:
+
+En situaciones donde la cantidad de variable a utilizar en el modelo es muy grande y no es factible estudiar y entender la relación estadística entre cada variable y la variable a predecir, se recomienda utilizar el método de Elastic-Net ya que reune lo mejor de las dos regularizaciones anteriores.
+
+Elastic Net es un modelo de regresión lineal que normaliza el vector de coeficientes con las normas L1 y L2. Esto permite generar un modelo en el que solo algunos de los coeficientes sean anulados, manteniendo las propiedades de regularización de Ridge. La función de coste es equivalente a:
+
+El parámetro λ regula el peso dado a la regularización impuesta por Ridge y por Lasso. Desde este punto de vista Elastic Net es un superconjunto de ambos modelos.
+
+$$ \hat{Y}_{Elastic\_net}=\sum_{i=1}^n(y_i - f(\beta_i))^2+ \alpha\lambda\sum_{j=1}^p\beta_j^2+(1-\lambda)\sum_{k=1}^r|\beta_j|)  $$
+
+### Grid Search:
+Para poder desarrollar esta regresión en R, se debe generar una busqueda del valor correcto de $\lambda$ y de $\alpha$, esto debido a que al modificar dichos valor, obtenemos un resultado de penalización y de comportamiento distinto, es decir que podemos controlar que "tan lasso" o que "tan ridge" queramos que sea nuestra regresión. En este caso tenemos dos parámetros de configuración para el grid search: $\alpha$ y $\lambda$.
+
+
+```{r echo=TRUE}
+set.seed(1234)
+ENR<-train(median_house_value ~. ,
+             dataTrain, 
+             method="glmnet",
+             tuneGrid = expand.grid(alpha = seq(0,1,length=10),
+                                    lambda=seq(0.0001, 1, length=5)),
+             trControl=customControl)
+```
+
+```{r echo=TRUE}
+plot(ENR)
+```
+```{r echo=TRUE}
+plot(ENR$finalModel, xvar = "lambda", label=TRUE)
+```
+```{r echo=TRUE}
+plot(ENR$finalModel, xvar = "dev", label=TRUE)
+```
+```{r echo=TRUE}
+plot(varImp(ENR))
+```
+
+
+#Comparacion de modelos
+```{r echo=TRUE}
+model_list<-list(
+  LinearModelo = lm, 
+  Ridige =  ridge,
+  Lasso = lasso,
+  Elastic_Net = ENR
+)
+```
+
+```{r echo=TRUE}
+summary(resamples(model_list))
+```
+```{r echo=TRUE}
+bwplot(resamples(model_list))
+```
+```{r echo=TRUE}
+ENR$bestTune
+```
+```{r echo=TRUE}
+coef(ENR$finalModel, s=ENR$bestTune$lambda)
+```
+
+```{r echo=TRUE}
+predict(object = ENR, newdata = dataTest)
+```
+
+

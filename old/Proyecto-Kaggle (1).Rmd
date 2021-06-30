@@ -1,0 +1,693 @@
+---
+title: "Proyecto Econometria Kaggle"
+output: html_notebook
+---
+
+#Libreria
+```{r}
+rm(list = ls())
+
+library(caret)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(gridExtra)
+library(Johnson)
+library(lmtest) #Funcionalidad del Modelo
+library(MASS)
+library(PerformanceAnalytics)
+```
+
+#Cargar Data
+```{r}
+train <- read.csv("train.csv", sep=",")
+train$longitude <- as.numeric(-1*train$longitude)
+train <- train[-1]
+
+test <- read.csv("test.csv", sep = ",")
+test$longitude <- as.numeric(-1*test$longitude)
+test <- test[-1]
+
+#dim(train)
+#dim(test)
+```
+
+# Imputacion Datos Fltantes - NA
+```{r}
+Na_train <- colnames(train)[!complete.cases(t(train))]
+Na_test <- colnames(test)[!complete.cases(t(test))]
+
+ABC <- is.na(train)
+table(ABC)
+```
+
+## Separar variable para revisar NA
+```{r}
+var00 <- train %>%
+  dplyr::select(Na_train)
+var00
+```
+
+## Porcentaje de representacion NA
+```{r}
+porcentajeNA <- as.data.frame(apply(var00, MARGIN = 2, function(col) mean(is.na(col))))
+colnames(porcentajeNA) <- c("porcentaje")
+#porcentajeNA
+
+```
+
+NOTA:
+Se reviso la data en busca de NA y se encontro que:
+- La variable "total_bedrooms" es donde se encuentran esos NA
+- La data Train contiene 144 NA, los cuales representan el 0.009967467 de todos los datos.
+- La data Test contiene 63 NA, los que representan 0.01017278
+- Se procede a realizar pruebas para completar estos valores con la media de los datos o la mediana.
+
+## Completar NA con las media/mediana
+```{r}
+var00$total_bedrooms_mean <- ifelse(is.na(var00$total_bedrooms),
+                               mean(var00$total_bedrooms, na.rm = TRUE),
+                               var00$total_bedrooms)
+
+var00$total_bedrooms_median <- ifelse(is.na(var00$total_bedrooms),
+                               median(var00$total_bedrooms, na.rm = TRUE),
+                               var00$total_bedrooms)
+```
+
+```{r}
+var00 %>%
+  ggplot(aes(x=total_bedrooms, y=..density..))+
+  geom_density(color="blue", lwd=1) +
+  geom_density(aes(x=total_bedrooms_mean, y=..density..), col="red", lwd=1)+
+  geom_density(aes(x=total_bedrooms_median, y=..density..), col="purple", lwd=1)+
+  theme_minimal()
+```
+
+Nota:
+- Se revisaron las estadisticas y se concluye que ambas metricas (media y mediana) conservan el comportamiento original de los datos.
+- Se procedera a completar los datos NA en la variable "total_bedrooms" con la media de los datos, para no perder la significancia estadistica.
+
+
+# Nueva data, con los NA completados
+```{r}
+train$total_bedrooms <- ifelse(is.na(train$total_bedrooms),
+                               mean(train$total_bedrooms, na.rm = TRUE),
+                               train$total_bedrooms)
+
+test$total_bedrooms <- ifelse(is.na(test$total_bedrooms),
+                              mean(test$total_bedrooms, na.rm = TRUE),
+                              test$total_bedrooms)
+```
+
+# Codificacion de variables categricas a numericas
+```{r}
+table(train$ocean_proximity)
+table(test$ocean_proximity)
+```
+
+# Nueva data con codificacion de variables categoricas
+```{r}
+subData<- train %>%
+  dplyr::select(ocean_proximity)
+OHE <- dummyVars("~.", data=subData)
+OHE_dataframe <- data.frame(predict(OHE, newdata=subData))
+train <- cbind(train, OHE_dataframe)
+train <- train[-10]
+
+subData<- test %>%
+  dplyr::select(ocean_proximity)
+OHE <- dummyVars("~.", data=subData)
+OHE_dataframe <- data.frame(predict(OHE, newdata=subData))
+test <- cbind(test, OHE_dataframe)
+test <- test[-9]
+```
+
+# Analisis Estadistico de las Variables
+```{r}
+#summary(train)
+#summary(test)
+names(train)
+```
+
+# Feature Scaling (tamano de los valores)
+
+## Normalizacion / Estandarizacion
+```{r}
+#norm_data <- scale(train)
+
+train$longitude_std <- ((train$longitude - mean(train$longitude))/sd(train$longitude))
+train$latitude_std <- ((train$latitude - mean(train$latitude))/sd(train$latitude))
+train$housing_median_age_std <- ((train$housing_median_age - mean(train$housing_median_age))/sd(train$housing_median_age))
+train$total_rooms_std <- ((train$total_rooms - mean(train$total_rooms))/sd(train$total_rooms))
+train$total_bedrooms_std <- ((train$total_bedrooms - mean((train$total_bedrooms))/sd(train$total_bedrooms)))
+train$population_std <- ((train$population -  mean(train$population))/sd(train$population))
+train$households_std <- ((train$households - mean(train$households))/sd(train$households))
+train$median_income_std <- ((train$median_income - mean(train$median_income))/sd(train$median_income))
+```
+
+## Normalizacion / Estandarizacion Variable Objetivo
+```{r}
+train$median_house_value_std <- ((train$median_house_value - mean(train$median_house_value))/sd(train$median_house_value))
+```
+
+## Normalizacion / Estandarizacion DataTest
+```{r}
+test$longitude_std <- ((test$longitude - mean(test$longitude))/sd(test$longitude))
+test$latitude_std <- ((test$latitude - mean(test$latitude))/sd(test$latitude))
+test$housing_median_age_std <- ((test$housing_median_age - mean(test$housing_median_age))/sd(test$housing_median_age))
+test$total_rooms_std <- ((test$total_rooms - mean(test$total_rooms))/sd(test$total_rooms))
+test$total_bedrooms_std <- ((test$total_bedrooms - mean((test$total_bedrooms))/sd(test$total_bedrooms)))
+test$population_std <- ((test$population -  mean(test$population))/sd(test$population))
+test$households_std <- ((test$households - mean(test$households))/sd(test$households))
+test$median_income_std <- ((test$median_income - mean(test$median_income))/sd(test$median_income))
+```
+
+Acontinuacion se procedera a estudiar su representacion grafica, en busca de comportamiento.
+
+# Comportamiento de los datos
+
+### Grafico No.1: longitude_std
+```{r}
+boxplot(train$longitude, horizontal = TRUE)
+
+train %>%
+        ggplot(aes(x=longitude, y=..density..)) +
+        geom_density(col="red") +
+        labs(title = "Grafico No.1: Densidad Longitude",
+         x = "Longitude",
+         y = "Densidad") +
+        theme_bw()
+
+```
+
+### Grafico No.2: latitude_std
+```{r}
+boxplot(train$latitude, horizontal = TRUE)
+
+train %>%
+        ggplot(aes(x=latitude_std, y=..density..)) +
+        geom_density(col="blue") +
+        labs(title = "Grafico No.2: Densidad Latitude",
+         x = "Latitude",
+         y = "Densidad") +
+        theme_bw()
+```
+
+### Grafico No.3: housing_median_age_std
+```{r}
+boxplot(train$housing_median_age, horizontal = TRUE)
+
+train %>%
+        ggplot(aes(x=housing_median_age_std, y=..density..)) +
+        geom_density(col="orange", lwd=0.7) +
+        labs(title = "Grafico No.3: Densidad Housing Median Age",
+         x = "Housing Median Age",
+         y = "Densidad") +
+        theme_bw()
+```
+### Grafico No.4: total_rooms_std
+```{r}
+boxplot(train$total_rooms, horizontal = TRUE)
+
+train %>%
+        ggplot(aes(x=total_rooms_std, y=..density..)) +
+        geom_density(col="black") +
+        labs(title = "Grafico No.4: Densidad Total Rooms",
+         x = "Total Rooms",
+         y = "Densidad") +
+        theme_bw()
+```
+
+### Grafico No.5: total_bedrooms_std
+```{r}
+boxplot(train$total_bedrooms, horizontal = TRUE)
+
+train %>%
+        ggplot(aes(x=total_bedrooms_std, y=..density..)) +
+        geom_density(col="steelblue4", lwd=1) +
+        labs(title = "Grafico No.5: Densidad Total Bedrooms",
+         x = "Total Bedrooms",
+         y = "Densidad") +
+        theme_bw()
+```
+
+### Grafico No.6: population_std
+```{r}
+boxplot(train$population, horizontal = TRUE)
+
+train %>%
+        ggplot(aes(x=population_std, y=..density..)) +
+        geom_density(col="darkmagenta", lwd=0.7) +
+        labs(title = "Grafico No.6: Densidad Population",
+         x = "Popuation",
+         y = "Densidad") +
+        theme_bw()
+```
+
+### Grafico No.7: households_std
+```{r}
+boxplot(train$households, horizontal = TRUE)
+
+train %>%
+        ggplot(aes(x=households_std, y=..density..)) +
+        geom_density(col="gold3", lwd=0.7) +
+        labs(title = "Grafico No.7: Densidad Households",
+         x = "Households",
+         y = "Densidad") +
+        theme_bw()
+```
+
+### Grafico No.8: median_income_std
+```{r}
+boxplot(train$median_income, horizontal = TRUE)
+
+train %>%
+        ggplot(aes(x=median_income_std, y=..density..)) +
+        geom_density(col="seagreen", lwd=1) +
+        labs(title = "Grafico No.8: Densidad Median Income",
+         x = "Median Income",
+         y = "Densidad") +
+        theme_bw()
+```
+
+### Grafico No.9: ocean
+
+
+### Grafico No.10: median_house_value_std
+```{r}
+
+boxplot(train$median_house_value, horizontal = TRUE)
+        
+train %>%
+        ggplot(aes(x=median_house_value_std, y=..density..)) +
+        geom_density(col="blue4", linetype = "dashed", lwd=0.8) +
+        labs(title = "Grafico No.10: Densidad Median House Value",
+         x = "Median House Value",
+         y = "Densidad") +
+        theme_bw()
+```
+
+
+# Transformacion de las Variables
+Existen varios métodos estadísticos utiles para analizar datos donde la hipótesis de normalidad no es razonable o se ha demostrado empíricamente que no es.
+
+1. Bootstrap
+2. Tests no paramétricos
+3. Tests de permutaciones
+4. Modelos lineales generalizados
+5. Transformación de datos
+6. Estadística Robusta
+
+## Test de normalidad
+
+Los análisis de normalidad, también llamados contrastes de normalidad, tienen como objetivo analizar cuánto difiere la distribución de los datos observados respecto a lo esperado si procediesen de una distribución normal con la misma media y desviación típica.
+
+Hipotesisi
+H0: La variable presenta una distribución normal
+H1: La variable presenta una distribución no normal
+
+El p-value de estos test indica la probabilidad de obtener una distribución como la observada si los datos proceden realmente de una población con una distribución normal.
+
+```{r}
+library("tseries")
+library("moments")
+library("nortest")
+
+#jarque.bera.test(x = train$longitude)
+#ad.test(x=train$longitude) #Prueba Anderson-Darling
+#lillie.test(x=train$longitude) #Prueba de Kolmogorov-smirnov
+#pearson.test(x=train$longitude) #Prueba de Chi Cuadrada de Pearson
+```
+Importante: cuanto mayor sea el tamaño de la muestra, menos sensibles son los métodos paramétricos a la falta de normalidad. Por esta razón, es importante no basar las conclusiones únicamente en el p-value del test, sino también considerar la representación gráfica y el tamaño de la muestra.
+
+Para el proyecto se aplico la prueba Jarque Bera (sesgo y Kurtosis, ambos deben ser cero para tener una distribucion normal) a cada variable de la data, en todos los casos p-value de cada uno de ellos fue menor al nivel de significancia de 10%, 5% y 1%, por consiguiente en todos los casos se rechazo la H0, las variables presentan un distribucion no normal.Se elige el test JB por el tamanio de la data, ya que este se aplica a n >30 observaciones.
+
+Por consiguiente, las variables estudiadas no presentan el comportamiento normal deseado, por lo que se procedera a estudiar cada una de las mismas y realizar su respectiva tranformacion.
+
+
+
+## Transformacion
+
+#### Transformación de datos Box-Cox
+```{r}
+library(MASS)
+library(geoR)
+Var01 <- as.numeric(train$longitude)
+
+lambda = boxcoxfit(Var01)$lambda
+bin.tr.bc =(((Var01)^lambda)-1)/(lambda)
+hist(bin.tr.bc)
+qqnorm(bin.tr.bc, datax=T)
+qqline(bin.tr.bc, col="red")
+
+```
+
+#### Johnson
+```{r}
+library("Johnson")
+
+johnson_t <- RE.Johnson(Var01)$transformed
+hist(johnson_t)
+qqnorm(johnson_t, datax=T)
+qqline(johnson_t, col = "red")
+```
+
+#### Logaritmica
+```{r}
+log_t <- log(Var01)
+hist(log_t)
+qqnorm(log_t, datax=T)
+qqline(log_t, col = "red")
+```
+
+#### Square root
+```{r}
+SquareRoot_t <- sqrt(Var01)
+hist(SquareRoot_t)
+qqnorm(SquareRoot_t, datax=T)
+qqline(SquareRoot_t, col = "red")
+```
+
+#### Log squared
+```{r}
+LogSquared_t <- log(Var01)^2
+hist(LogSquared_t)
+qqnorm(LogSquared_t, datax=T)
+qqline(LogSquared_t, col="red")
+```
+
+#### log exponent 1.5
+```{r}
+LogExpon_t <- log(Var01)^1.5
+hist(LogExpon_t)
+qqnorm(LogExpon_t, datax=T)
+qqline(LogExpon_t, col="red")
+```
+
+#### Cube root
+```{r}
+CubeRoot_t <- (Var01)^(1/3)
+hist(CubeRoot_t)
+qqnorm(CubeRoot_t, datax=T)
+qqline(CubeRoot_t, col="red")
+```
+#### Desperate arcsin complex transformation
+```{r}
+arcsin_t <- asin((Var01/max(Var01))^(1/2))
+hist(arcsin_t)
+qqnorm(arcsin_t, datax=T)
+qqline(arcsin_t, col="red")
+```
+
+#### standard method or adhoc (abs(binomial - mean(binomial)))
+```{r}
+StandMeth_t <- abs(Var01 - mean(Var01))
+hist(StandMeth_t)
+qqnorm(StandMeth_t, datax=T)
+qqline(StandMeth_t, col="red")
+```
+
+#### Transformacion Inversa
+```{r}
+inv_t <- 1/(Var01)
+hist(inv_t)
+qqnorm(inv_t, datax=T)
+qqline(inv_t, col="red")
+```
+
+#### Métodos de remuestreo Bootstrap
+La técnica de bootstrap consiste en obtener la distribución de un estadístico (al menos de forma aproximada) utilizando la información que se deriva de una sola muestra (y sus réplicas). Se genera una muestra con reemplazamiento.
+
+Suponemos que la distribución bootstrap de un estadístico, obtenida a partir de una muestra aleatoria simple de tamaño n es aproximadamente normal y que el sesgo es pequeño.
+
+El sesgo es la diferencia entre el estadístico de interés en la muestra original y el estadístico obtenido a partir de la distribución bootstrat).
+
+Tiene los siguientes pasos:
+1. decidir cuántas muestras de bootstrap realizar
+2. cual es el tamaño de la muestra
+3. para cada muestra de bootstrap:
+4. extraer una muestra con reemplazo con el tamaño elegido
+5. calcular la estadística de interés para esa muestra
+
+
+```{r}
+library(boot)
+datos= data.frame(Var01)
+
+media= function(datos, indices)
+{
+  d= datos[indices,]
+  mean(d)
+}
+replicas = boot(data=datos, statistic =media, R=14447)
+names(replicas)
+
+hist(replicas$t)
+qqnorm(replicas$t, datax=T)
+qqline(replicas$t, col="red")
+```
+
+
+# Nueva data con variables transformadas
+```{r}
+train$longitude_t <- RE.Johnson(train$longitude_std)$transformed
+train$latitude_t <- RE.Johnson(train$latitude_std)$transformed
+train$housing_median_age_t <- asin((train$housing_median_age/max(train$housing_median_age))^(1/2))
+train$total_rooms_t <- RE.Johnson(train$total_rooms)$transformed
+train$total_bedrooms_t <- RE.Johnson(train$total_bedrooms)$transformed
+train$population_t <- RE.Johnson(train$population)$transformed
+train$households_t <- RE.Johnson(train$households)$transformed
+train$median_income_t <- RE.Johnson(train$median_income)$transformed
+train$median_house_value_t <- RE.Johnson(train$median_house_value)$transformed
+names(train)
+```
+
+```{r}
+test$longitude_t <- RE.Johnson(test$longitude_std)$transformed
+test$latitude_t <- RE.Johnson(test$latitude_std)$transformed
+test$housing_median_age_t <- asin((test$housing_median_age/max(test$housing_median_age))^(1/2))
+test$total_rooms_t <- RE.Johnson(test$total_rooms)$transformed
+test$total_bedrooms_t <- RE.Johnson(test$total_bedrooms)$transformed
+test$population_t <- RE.Johnson(test$population)$transformed
+test$households_t <- RE.Johnson(test$households)$transformed
+test$median_income_t <- RE.Johnson(test$median_income)$transformed
+names(test)
+```
+
+# Manejo Outliers / Capping
+
+### Datas para pruebas
+```{r}
+data_train <- dplyr::select(train, c(longitude_t, latitude_t, housing_median_age_t, total_rooms_t, 
+                              total_bedrooms_t, population_t, households_t, median_income_t,
+                              ocean_proximity.1H.OCEAN, ocean_proximityINLAND, ocean_proximityISLAND,
+                              ocean_proximityNEAR.BAY, ocean_proximityNEAR.OCEAN))
+
+data_test <- dplyr::select(test, c(longitude_t, latitude_t, housing_median_age_t, total_rooms_t, 
+                            total_bedrooms_t, population_t, households_t, median_income_t,
+                            ocean_proximity.1H.OCEAN, ocean_proximityINLAND, ocean_proximityISLAND,
+                            ocean_proximityNEAR.BAY, ocean_proximityNEAR.OCEAN))
+```
+
+## Funcion detectar Outliers
+```{r}
+detect_outliers <- function(df, colname){
+  
+  histPlot <- df %>%
+    ggplot(aes_string(x=colname)) +
+    geom_histogram(color='white', fill='orange', alpha=0.8)+
+    theme_minimal()
+  
+  boxPlot <- df %>%
+    ggplot(aes_string(x=colname))+
+    geom_boxplot()+
+    theme_minimal()
+  
+  qqPlot <- df %>%
+    ggplot(aes_string(sample=colname))+
+    stat_qq()+
+    stat_qq_line(col="red", lwd=1)+
+    theme_minimal()
+  
+  plotOut <- grid.arrange(histPlot, boxPlot, qqPlot, ncol=3)+
+  theme(aspect.ratio = 5/50)
+  
+  return(plotOut)
+}
+
+detect_outliers(data_train, "longitude_t")
+
+```
+
+## Proceso Capping
+```{r}
+
+capping <- function(OutVar){
+  IQR <- quantile(OutVar, 0.75)-quantile(OutVar,0.25)
+  LS <- mean(OutVar) + 1.75*IQR
+  LI <- mean(OutVar) - 1.75*IQR
+  
+  OutVar <- ifelse(OutVar >= LS, LS, OutVar)
+  OutVar <- ifelse(OutVar <= LI, LI, OutVar)
+  return(OutVar)
+}
+
+```
+
+### Tratamiento Variables con Outliers en Data
+
+#### train
+```{r}
+
+train$longitude_outliers <- capping(train$longitude_t)
+train$latitude_outliers <- capping(train$latitude_t)
+train$housing_median_age_outliers <- capping(train$housing_median_age_t)
+train$total_rooms_outliers <- capping(train$total_rooms_t)
+train$total_bedrooms_outliers <- capping(train$total_bedrooms_t)
+train$population_outliers <- capping(train$population_t)
+train$households_outliers <- capping(train$households_t)
+train$median_income_outliers <- capping(train$median_income_t)
+train$median_house_value_outliers <- capping(train$median_house_value_t)
+
+## VISUALUZACION
+detect_outliers(train, "median_house_value")
+detect_outliers(train, "median_house_value_std")
+detect_outliers(train, "median_house_value_t")
+detect_outliers(train, "median_house_value_outliers")
+
+```
+
+#### Tet
+```{r}
+
+test$longitude_outliers <- capping(test$longitude_t)
+test$latitude_outliers <- capping(test$latitude_t)
+test$housing_median_age_outliers <- capping(test$housing_median_age_t)
+test$total_rooms_outliers <- capping(test$total_rooms_t)
+test$total_bedrooms_outliers <- capping(test$total_bedrooms_t)
+test$population_outliers <- capping(test$population_t)
+test$households_outliers <- capping(test$households_t)
+test$median_income_outliers <- capping(test$median_income_t)
+
+## VISUALUZACION
+detect_outliers(test, "total_rooms")
+detect_outliers(test, "total_rooms_std")
+detect_outliers(test, "total_rooms_t")
+detect_outliers(test, "total_rooms_outliers")
+
+```
+
+# Analisis de correlacion
+```{r}
+library(PerformanceAnalytics)
+data_proy_train <- dplyr::select(train, c(longitude_outliers,latitude_outliers, housing_median_age_outliers, total_rooms_outliers,
+                                   total_bedrooms_outliers, population_outliers, households_outliers, median_income_outliers,
+                                   median_house_value_outliers))
+
+X <- dplyr::select(train, c(longitude_outliers,latitude_outliers, housing_median_age_outliers, total_rooms_outliers,
+                                   total_bedrooms_outliers, population_outliers, households_outliers, median_income_outliers))
+y <- dplyr::select(train, median_house_value_outliers)
+```
+
+### Comportamiento de los datos
+```{r}
+library(psych)
+multi.hist(x = X, dcol = c("blue", "red"), dlty = c("dotted", "solid"), main = "")
+```
+
+# Estimacion del Modelo
+
+```{r}
+#K-Folds.
+set.seed(1234)
+customControl<-trainControl(method = "repeatedcv", number=10, repeats=5, verboseIter = F)
+
+set.seed(1234)
+mod01 <-train(median_house_value_outliers ~., data_proy_train, method="lm", trControl=customControl)
+mod01
+
+```
+```{r}
+summary(mod01)
+```
+
+## Ridge Regression:
+
+library(MASS)
+library(PerformanceAnalytics)
+
+set.seed(1234)
+ridge<-train(median_house_value_outliers ~., data_proy_train, 
+             method="glmnet",
+             tuneGrid = expand.grid(alpha = 0,
+                                    lambda=seq(0.0001, 1, length=5)),
+             trControl=customControl)
+
+
+## Modelo con todas las Variables
+```{r}
+mod00 <- lm(median_house_value_outliers ~., data = data_proy_train)
+summary(mod00)
+```
+
+## Residuos
+```{r}
+par(mfrow = c(2, 2))
+plot(mod00)
+```
+## Distribucion de los residuos
+```{r}
+qqnorm(mod00$residuals)
+qqline(mod00$residuals)
+
+```
+
+```{r}
+csv_test<-predict(object=mod00, newdata=test)
+write.csv(x = csv_test, file = "csv_test.csv", row.names = TRUE) 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

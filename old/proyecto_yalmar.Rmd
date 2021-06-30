@@ -1,0 +1,18 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+dataset <- read.csv("train.csv", sep=",")
+head(dataset)
+```
+
+```{r}
+p1<- ggplot(data = dataset, aes(x=latitude))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset_media,color="blue")
+
+p1
+```
+

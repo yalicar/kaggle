@@ -1,0 +1,468 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+
+rm(list = ls())
+```
+
+
+```{r}
+# Cargando librerias
+# ==============================================================================
+library(skimr)
+library(caret)
+library(lattice)
+library(ggplot2)
+library(VIM)
+library(reshape2)
+library(randomForest)
+library(caret)
+library(doSNOW)
+library(doParallel)
+```
+
+
+```{r}
+# Cargando la data
+# ==============================================================================
+train<- read.csv("train.csv", sep=",")
+test<- read.csv("test.csv", sep = ",")
+```
+
+```{r}
+# visualizando la data
+# ==============================================================================
+skim(train)
+#skim(test)
+
+```
+```{r}
+# Imputacion de datos faltantes
+# ==============================================================================
+kn=5
+
+train<- kNN(train,variable=c("total_bedrooms"),k=kn)
+train<- subset( train, select = -c(total_bedrooms_imp) )
+test<- kNN(test,variable=c("total_bedrooms"),k=kn)
+test<- subset(test, select = -c(total_bedrooms_imp) )
+```
+
+```{r}
+# visualizando la data despues de realizar la imputacion
+# ==============================================================================
+skim(train)
+skim(test)
+```
+# grafica boxpplot para visualizar los outliers
+```{r}
+# visualizando de los outliers
+# ==============================================================================
+subData<-train %>%
+  dplyr::select(colnames(train[,-10]))
+dataX<-melt(subData)
+
+dataX %>%
+  ggplot(aes(x=variable, y=value)) +
+  geom_boxplot()
+
+subData<-test %>%
+  dplyr::select(colnames(test[,-10]))
+dataX2<-melt(subData)
+
+dataX2 %>%
+  ggplot(aes(x=variable, y=value)) +
+  geom_boxplot()
+```
+```{r}
+# Reemplazo de outlier por el metodo knn de los datos de entrenamiento
+# ==============================================================================
+outliers <- boxplot(train$total_rooms, plot = FALSE)$out
+train[train$total_rooms %in% outliers, "total_rooms"] = NA
+train<- kNN(train,variable=c("total_rooms"),k=kn)
+train<- subset( train, select = -c(total_rooms_imp) )
+
+outliers <- boxplot(train$total_bedrooms, plot = FALSE)$out
+train[train$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+train<- kNN(train,variable=c("total_bedrooms"),k=kn)
+train<- subset(train, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(train$population, plot = FALSE)$out
+train[train$population %in% outliers, "population"] = NA
+train<- kNN(train,variable=c("population"),k=kn)
+train<- subset(train, select = -c(population_imp) )
+
+outliers <- boxplot(train$households, plot = FALSE)$out
+train[train$households %in% outliers, "households"] = NA
+train<- kNN(train,variable=c("households"),k=kn)
+train<- subset(train, select = -c(households_imp) )
+
+outliers <- boxplot(train$median_house_value, plot = FALSE)$out
+train[train$median_house_value %in% outliers, "median_house_value"] = NA
+train<- kNN(train,variable=c("median_house_value"),k=kn)
+train<- subset(train, select = -c(median_house_value_imp) )
+
+
+# Reemplazo de outlier por el metodo knn de los datos de prueba
+# ==============================================================================
+
+outliers <- boxplot(test$total_rooms, plot = FALSE)$out
+test[test$total_rooms %in% outliers, "total_rooms"] = NA
+test<- kNN(test,variable=c("total_rooms"),k=kn)
+test<- subset(test, select = -c(total_rooms_imp) )
+
+outliers <- boxplot(test$total_bedrooms, plot = FALSE)$out
+test[test$total_bedrooms %in% outliers, "total_bedrooms"] = NA
+test<- kNN(test,variable=c("total_bedrooms"),k=kn)
+test<- subset(test, select = -c(total_bedrooms_imp) )
+
+outliers <- boxplot(test$population, plot = FALSE)$out
+test[test$population %in% outliers, "population"] = NA
+test<- kNN(test,variable=c("population"),k=kn)
+test<- subset(test, select = -c(population_imp) )
+
+outliers <- boxplot(test$households, plot = FALSE)$out
+test[test$households %in% outliers, "households"] = NA
+test<- kNN(test,variable=c("households"),k=kn)
+test<- subset( test, select = -c(households_imp) )
+```
+
+
+
+```{r}
+# visualizando de los outliers
+# ==============================================================================
+subData<-train %>%
+  dplyr::select(colnames(train[,-10]))
+dataX<-melt(subData)
+dataX %>%
+  ggplot(aes(x=variable, y=value)) +
+  geom_boxplot()
+
+subData<-test %>%
+  dplyr::select(colnames(test[,-10]))
+dataX2<-melt(subData)
+dataX2 %>%
+  ggplot(aes(x=variable, y=value)) +
+  geom_boxplot()
+```
+
+```{r}
+# Tranformaciones de variables categoricas
+# ==============================================================================
+subData<- train %>%
+  dplyr::select(ocean_proximity)
+
+OHE<-dummyVars("~.", data=train)
+train<-data.frame(predict(OHE, newdata=train))
+train
+
+subData2<- test %>%
+  dplyr::select(ocean_proximity)
+
+OHE<-dummyVars("~.", data=test)
+test<-data.frame(predict(OHE, newdata=test))
+test
+
+# Tratamiendo de variables
+#train$total_bedrooms>-log(train$total_bedrooms)
+#test$total_bedrooms>-log(test$total_bedrooms)
+
+```
+
+```{r}
+skim(train)
+```
+
+
+
+```{r}
+# Models
+# ==============================================================================
+## Random Forest Regression
+# ==============================================================================
+
+rf.label <- as.factor(train$median_house_value)
+
+set.seed(1234)
+rf.1 <- randomForest(x = train[-c(10)], y = train$median_house_value, importance = TRUE, ntree = 1000)
+rf.1
+varImpPlot(rf.1)
+
+```
+```{r}
+sqrt(rf.1$mse[length(rf.1$mse)])
+train
+rf.1
+```
+```{r}
+# Prediccion usando Random Forest y guardado de la data en CSV.
+# ==============================================================================
+
+
+
+predictions <- rf.1 %>% predict(test)
+
+predictions
+predictions<-data.frame(predictions)
+predictions$id <-test$id
+colnames(predictions)[colnames(predictions) == 'predictions'] <- 'median_house_value'
+
+predictions<-predictions %>%
+  dplyr::select(id,median_house_value)
+predictions
+
+write.csv(x = predictions, file = "test_predict.csv", row.names = FALSE) 
+```
+
+
+
+```{r}
+# Random Forest Model using Ranger
+# ==============================================================================
+
+# librerias
+# ==============================================================================
+library(randomForest)
+library(caret)
+library(e1071)
+library(ranger)
+
+# Corriendo el Modelo
+# ==============================================================================
+
+set.seed(1234)
+train_2<-train[-c(13)]
+
+NZVar <- nearZeroVar(train_2, saveMetrics=TRUE)
+sel2 <- row.names(NZVar)[which(NZVar$nzv==FALSE)]
+train_2 <- train_2[, sel2]
+
+rf_classifier <- ranger(median_house_value ~ .,
+                        data=train_2,
+                        num.trees=6000,
+                        write.forest=TRUE,
+                        min.node.size=2,
+                        seed=123,
+                        mtry=5,importance= 'impurity')
+
+sqrt(rf_classifier$prediction.error)
+rf_classifier
+train_2
+#rf_classifier$variable.importance
+
+
+list_features=data.frame("feature"= names(rf_classifier$variable.importance),"value"=unname(rf_classifier$variable.importance))
+
+list_features %>%
+dplyr::arrange(desc(value)) %>%
+dplyr::top_n(25) %>%
+ggplot(aes(reorder(feature, value), value)) +
+geom_col() +
+coord_flip() +
+ggtitle("Top important variables")
+
+pp <- predict(rf_classifier,test)
+out <- data.frame(
+    id=test$id,
+    median_house_value=pp$predictions,row.names=NULL)
+
+write.csv(x = out, file = "test_predict.csv", row.names = FALSE)
+```
+```{r}
+# Cargando librerias
+# ==============================================================================
+library(skimr)
+library(caret)
+library(lattice)
+library(ggplot2)
+library(VIM)
+library(reshape2)
+library(randomForest)
+library(caret)
+library(doSNOW)
+library(doParallel)
+library(dplyr)
+library(tidyverse)
+
+
+```
+
+
+```{r}
+# Carga de los datos de entrenamiento y prueba
+# ==============================================================================
+
+train<- read.csv("train.csv", sep=",")
+test<- read.csv("test.csv", sep = ",")
+
+
+# Tranformaciones de variables categoricas a numericas
+# ==============================================================================
+
+subData<- train %>%
+  dplyr::select(ocean_proximity)
+
+OHE<-dummyVars("~.", data=train)
+train<-data.frame(predict(OHE, newdata=train))
+
+
+subData2<- test %>%
+  dplyr::select(ocean_proximity)
+
+OHE<-dummyVars("~.", data=test)
+test<-data.frame(predict(OHE, newdata=test))
+
+# Imputacion de datos de forma aleatoria
+# ==============================================================================
+
+rand.imput <-function(x){
+missing <- (is.na(x)) #vector booleano
+n.missing <- sum(missing)#Numero de NA’s
+x.obs <- x[!missing]#Datos no NA
+imputed <- x
+imputed[missing] <- sample(x.obs,n.missing,replace = T)
+#Se extrae una muestra aleatoria conocida y se remplazan estos en los NA
+return(imputed)}
+
+train$total_bedrooms <- rand.imput(train$total_bedrooms)
+test$total_bedrooms <- rand.imput(test$total_bedrooms)
+
+
+# Imputacion de datos faltantes usando knn
+# ==============================================================================
+kn=5
+
+train<- kNN(train,variable=c("total_bedrooms"),k=kn)
+train<- subset( train, select = -c(total_bedrooms_imp) )
+test<- kNN(test,variable=c("total_bedrooms"),k=kn)
+test<- subset(test, select = -c(total_bedrooms_imp) )
+
+
+# Random Forest CV entrenamiento del modelo
+# ==============================================================================
+
+
+set.seed(1234)
+train_3<-train
+train_3
+
+set.seed(431)
+tuneGrid <- data.frame(
+  .mtry = c(5,6,7,8,9,10,11),
+  .splitrule = "maxstat",
+  .min.node.size = c(1,2,3,5,6,7,9)
+)
+modRF <- train(median_house_value ~ ., data=train_3, method="ranger", trControl=trainControl(method="cv",number=43),preProcess = c("nzv","bagImpute"),
+                tuneGrid = tuneGrid,num.trees = 1000,importance = 'permutation')
+
+
+# Visualizacion de las caracteristicas del modelo
+# ==============================================================================
+
+modRF
+
+```
+
+
+
+
+
+```{r}
+varImp(modRF)
+train
+```
+
+
+```{r}
+
+rf.predict <-predict(modRF, test)
+# Desnormalizar los datos
+# ==============================================================================
+
+#rf.predict <- rf.predict$net.result*(max(datos$median_house_value)-min(datos$median_house_value))+min(datos$median_house_value)
+
+
+predictions<-rf.predict
+predictions<-data.frame(predictions)
+predictions$id <-test$id
+colnames(predictions)[colnames(predictions) == 'predictions'] <- 'median_house_value'
+
+predictions<-predictions %>%
+  dplyr::select(id,median_house_value)
+predictions
+
+write.csv(x = predictions, file = "test_predict.csv", row.names = FALSE) 
+
+```
+
+
+
+
+
+
+
+
+```{r}
+train3
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#```{r}
+
+smp_size <- floor(0.75 * nrow(train))
+
+## set the seed to make your partition reproducible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(train)), size = smp_size)
+
+train_p<- train[train_ind, ]
+test_p<- train[-train_ind, ]
+
+g=3
+
+model <- lm(median_house_value ~ poly(median_income, g, raw = TRUE) +
+              poly(ocean_proximityINLAND,1,raw=TRUE) +
+              poly(longitude,g,raw=TRUE)+
+              poly(latitude,g,raw=TRUE) +
+              poly(id,g,raw=TRUE) +
+              poly(housing_median_age,g,raw=TRUE) +
+              poly(total_rooms,g,raw=TRUE) +
+              poly(population,g,raw=TRUE) +
+              poly(total_bedrooms,g,raw=TRUE) +
+              poly(households,g,raw=TRUE) +
+              poly(ocean_proximity.1H.OCEAN,g,raw=TRUE)
+              
+            
+            ,
+            data = train)
+# Make predictions
+predictions <- model %>% predict(test_p)
+# Model performance
+# modelPerfomance = data.frame(RMSE = RMSE(predictions, test_p$median_house_value), R2 = R2(predictions, test_p$median_house_value)                 )
+  
+#print(lm(median_house_value ~ id + I(id^2), data = train_p))
+#print(modelPerfomance)
+predictions * attr(predictions, 'scaled:scale') + attr(predictions, 'scaled:center')
+summary(model)
+
+```
